@@ -13,3 +13,4 @@ hs_err_pid*
 
 # project specific
 /target
+/config/mycreds.cfg

@@ -73,7 +73,7 @@ public class PrimaryDaemon implements Daemon {
       Remote.chmodPaths(ssh, "a+wrx", config.getStringArray("provisionPaths"));
       Remote.stageDocker(ssh, config.getString("baseDockerImage"));
       ssh.disconnect();
-      Local.pushToHost(config.getString("seqwareBase"), host, config.getString("workflowDir"), config.getString("user"));
+      Local.pushToHost(config.getString("seqwareBase"), host, config.getString("workflowDir"), config.getString("ssh_user"));
     }
   }
 }

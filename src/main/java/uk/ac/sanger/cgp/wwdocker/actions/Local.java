@@ -44,9 +44,9 @@ import org.apache.logging.log4j.Logger;
 public class Local {
   private static final Logger logger = LogManager.getLogger();
   
-  public static void pushFileSetToHost(String[] sources, String destHost, String destPath) {
+  public static void pushFileSetToHost(String[] sources, String destHost, String destPath, String sshUser) {
     for(String source : sources) {
-      pushToHost(source, destHost, destPath);
+      pushToHost(source, destHost, destPath, sshUser);
     }
   }
   
