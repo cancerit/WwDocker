@@ -31,7 +31,13 @@
 
 package uk.ac.sanger.cgp.wwdocker.actions;
 
+import com.jcraft.jsch.JSchException;
+import com.jcraft.jsch.Session;
+import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
@@ -44,13 +50,13 @@ import org.apache.logging.log4j.Logger;
 public class Local {
   private static final Logger logger = LogManager.getLogger();
   
-  public static void pushFileSetToHost(String[] sources, String destHost, String destPath, String sshUser, String sshPw) {
+  public static void pushFileSetToHost(String[] sources, String destHost, String destPath, Map envs, Session session) {
     for(String source : sources) {
-      pushToHost(source, destHost, destPath, sshUser, sshPw);
+      pushToHost(source, destHost, destPath, envs, session);
     }
   }
   
-  public static int pushToHost(String source, String destHost, String destPath, String sshUser, String sshPw) {
+  public static int pushToHost(String source, String destHost, String destPath, Map envs, Session session) {
     String localFile = source;
     int exitCode = -1;
     if(source.startsWith("http") || source.startsWith("ftp")) {
@@ -60,30 +66,32 @@ public class Local {
         localTmp = localTmp.concat(System.getProperty("file.separator"));
       }
       localFile = localTmp.concat(elements[elements.length-1]);
-      String getCommand = "curl -sS -o ".concat(localFile).concat(" ").concat(source);
-      exitCode = execCommand(getCommand);
+      // -z only transfer if modified
+      String getCommand = "curl -RLsS"
+                            .concat(" -z ").concat(localFile)
+                            .concat(" -o ").concat(localFile)
+                            .concat(" ").concat(source);
+      exitCode = execCommand(getCommand, envs);
     }
-    // @TODO - this needs to use the SSH aproach as known host type transfer won't be possible
-    String pushCommand = "rsync -q ".concat(localFile).concat(" ")
-                        .concat(sshUser).concat("@")
-                        .concat(destHost).concat(":").concat(destPath).concat("/.");
-    String [] envs = {"RSYNC_PASS-WORD:" + sshPw};
-    exitCode = execCommand(pushCommand, envs);
+    try {
+      Remote.fileTo(session, localFile, destPath.concat("/."));
+    } catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection", e);
+    }
     return exitCode;
   }
   
   private static int execCommand(String command) {
-    String[] noEnv = new String[0];
+    Map<String,String> noEnv = new HashMap();
     return execCommand(command, noEnv);
   }
   
   
-  private static int execCommand(String command, String[] envs) {
+  private static int execCommand(String command, Map envs) {
     ProcessBuilder pb = new ProcessBuilder(command.split(" "));
-    for(String env : envs) {
-      String[] tuple = env.split(":");
-      pb.environment().put(tuple[0], tuple[1]);
-    }
+    Map<String, String> pEnv = pb.environment();
+    pEnv.putAll(envs);
+    logger.info("Executing: " + command);
     int exitCode;
     try {
       Process p = pb.start();

@@ -31,17 +31,17 @@
 
 package uk.ac.sanger.cgp.wwdocker.daemon;
 
-import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import com.rabbitmq.client.Channel;
 import java.io.IOException;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
-import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
 import uk.ac.sanger.cgp.wwdocker.actions.Remote;
+import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
 
 /**
  *
@@ -52,6 +52,7 @@ public class PrimaryDaemon implements Daemon {
   
   BaseConfiguration config;
   Channel channel;
+  String[] optionalEnvs = {"http_proxy", "https_proxy"};
   
   public PrimaryDaemon(BaseConfiguration config, Channel channel) {
     this.config = config;
@@ -66,14 +67,22 @@ public class PrimaryDaemon implements Daemon {
     channel.basicPublish("", basicQueue, null, message.getBytes());
     logger.debug(" [x] Sent '" + message + "'");
     
+    Map<String,String> envs = new HashMap();
+    for(String env : optionalEnvs) {
+      String value = config.getString(env);
+      if(value != null) {
+        envs.put(env, value);
+      }
+    }
+    
     String[] hosts = config.getStringArray("hosts");
     for(String host:hosts) {
       Session ssh = Remote.getSession(config, host);
       Remote.createPaths(ssh, config.getStringArray("provisionPaths"));
       Remote.chmodPaths(ssh, "a+wrx", config.getStringArray("provisionPaths"));
       Remote.stageDocker(ssh, config.getString("baseDockerImage"));
+      Local.pushToHost(config.getString("seqwareBase"), host, config.getString("workflowDir"), envs, ssh);
       ssh.disconnect();
-      Local.pushToHost(config.getString("seqwareBase"), host, config.getString("workflowDir"), config.getString("ssh_user"), config.getString("ssh_pw"));
     }
   }
 }
