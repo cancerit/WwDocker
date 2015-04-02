@@ -44,13 +44,13 @@ import org.apache.logging.log4j.Logger;
 public class Local {
   private static final Logger logger = LogManager.getLogger();
   
-  public static void pushFileSetToHost(String[] sources, String destHost, String destPath, String sshUser) {
+  public static void pushFileSetToHost(String[] sources, String destHost, String destPath, String sshUser, String sshPw) {
     for(String source : sources) {
-      pushToHost(source, destHost, destPath, sshUser);
+      pushToHost(source, destHost, destPath, sshUser, sshPw);
     }
   }
   
-  public static int pushToHost(String source, String destHost, String destPath, String sshUser) {
+  public static int pushToHost(String source, String destHost, String destPath, String sshUser, String sshPw) {
     String localFile = source;
     int exitCode = -1;
     if(source.startsWith("http") || source.startsWith("ftp")) {
@@ -67,14 +67,23 @@ public class Local {
     String pushCommand = "rsync -q ".concat(localFile).concat(" ")
                         .concat(sshUser).concat("@")
                         .concat(destHost).concat(":").concat(destPath).concat("/.");
-    exitCode = execCommand(pushCommand);
+    String [] envs = {"RSYNC_PASS-WORD:" + sshPw};
+    exitCode = execCommand(pushCommand, envs);
     return exitCode;
   }
   
-  
   private static int execCommand(String command) {
-    logger.info("Executing: " + command);
+    String[] noEnv = new String[0];
+    return execCommand(command, noEnv);
+  }
+  
+  
+  private static int execCommand(String command, String[] envs) {
     ProcessBuilder pb = new ProcessBuilder(command.split(" "));
+    for(String env : envs) {
+      String[] tuple = env.split(":");
+      pb.environment().put(tuple[0], tuple[1]);
+    }
     int exitCode;
     try {
       Process p = pb.start();
