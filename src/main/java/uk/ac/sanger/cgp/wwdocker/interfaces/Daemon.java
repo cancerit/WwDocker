@@ -31,14 +31,12 @@
 
 package uk.ac.sanger.cgp.wwdocker.interfaces;
 
-import com.rabbitmq.client.Channel;
 import java.io.IOException;
-import org.apache.commons.configuration.BaseConfiguration;
 
 /**
  *
  * @author kr2
  */
 public interface Daemon {
-  void run() throws IOException;
+  void run() throws IOException, InterruptedException;
 }

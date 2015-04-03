@@ -41,6 +41,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URISyntaxException;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -76,6 +77,16 @@ public class Remote {
       execCommand(session, command);
     } catch(JSchException e) {
       throw new RuntimeException("Failure in SSH connection", e);
+    }
+  }
+  
+  public static void sendThisJar(Session session) {
+    try {
+      File thisJar = new File(Remote.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath());
+      
+    }
+    catch(URISyntaxException e) {
+      throw new RuntimeException(e.getMessage(), e);
     }
   }
   

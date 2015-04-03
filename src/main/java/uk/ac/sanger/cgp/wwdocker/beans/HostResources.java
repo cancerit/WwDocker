@@ -82,6 +82,15 @@ public class HostResources implements HostInfo {
     }
   }
   
+  public HostResources(String json) {
+    JSONObject jo = new JSONObject(json);
+    sysLoadAvg = jo.getDouble("sysLoadAvg");
+    totalMemBytes = jo.getLong("totalMemBytes");
+    freeMemBytes =  jo.getLong("freeMemBytes");
+    availableProcessors = jo.getInt("availableProcessors");
+    hostName = jo.getString("hostName");
+  }
+  
   /**
    * Gets the sysLoadAvg
    */

@@ -42,4 +42,8 @@ public class HostInfoFactory {
   public HostInfo getHostDetails() {
     return new HostResources();
   }
+  
+  public HostInfo getHostDetailsFromString(String json) {
+    return new HostResources(json);
+  }
 }

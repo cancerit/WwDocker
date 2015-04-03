@@ -39,9 +39,10 @@ import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import uk.ac.sanger.cgp.wwdocker.actions.Local;
 import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
+import uk.ac.sanger.cgp.wwdocker.interfaces.HostInfo;
+import uk.ac.sanger.cgp.wwdocker.messages.Produce;
 
 /**
  *
@@ -59,13 +60,18 @@ public class PrimaryDaemon implements Daemon {
     this.channel = channel;
   }
   
-  public void run() throws IOException {
+  public void run() throws IOException, InterruptedException {
     String basicQueue = config.getString("queue_register");
 
-    channel.queueDeclare(basicQueue, false, false, false, null);
-    String message = "Hello World!";
-    channel.basicPublish("", basicQueue, null, message.getBytes());
-    logger.debug(" [x] Sent '" + message + "'");
+    //channel.queueDeclare(basicQueue, false, false, false, null);
+    //String message = "Hello World!";
+    //channel.basicPublish("", basicQueue, null, message.getBytes());
+    //logger.debug(" [x] Sent '" + message + "'");
+    
+    Map<String, HostInfo> activeHosts = Produce.activeHosts(config, channel);
+    
+    // check for any messages on www-docker-register
+    
     
     Map<String,String> envs = new HashMap();
     for(String env : optionalEnvs) {
@@ -74,15 +80,25 @@ public class PrimaryDaemon implements Daemon {
         envs.put(env, value);
       }
     }
-    
     String[] hosts = config.getStringArray("hosts");
     for(String host:hosts) {
-      Session ssh = Remote.getSession(config, host);
-      Remote.createPaths(ssh, config.getStringArray("provisionPaths"));
-      Remote.chmodPaths(ssh, "a+wrx", config.getStringArray("provisionPaths"));
-      Remote.stageDocker(ssh, config.getString("baseDockerImage"));
-      Local.pushToHost(config.getString("seqwareBase"), host, config.getString("workflowDir"), envs, ssh);
-      ssh.disconnect();
+      if(activeHosts.containsKey(host)) {
+        // I'm not sure, I guess look at object and see if it's running anything?
+      }
+      else {
+        // no daemon running
+        Session ssh = Remote.getSession(config, host);
+        
+        ssh.disconnect();
+        // setup ssh session, push this JAR, cgf and log4j.ini to the host and start as worker (&)
+        // wait for host on wwd-worker-register
+      }
+//      Session ssh = Remote.getSession(config, host);
+//      Remote.createPaths(ssh, config.getStringArray("provisionPaths"));
+//      Remote.chmodPaths(ssh, "a+wrx", config.getStringArray("provisionPaths"));
+//      Remote.stageDocker(ssh, config.getString("baseDockerImage"));
+//      Local.pushToHost(config.getString("seqwareBase"), host, config.getString("workflowDir"), envs, ssh);
+//      ssh.disconnect();
     }
   }
 }

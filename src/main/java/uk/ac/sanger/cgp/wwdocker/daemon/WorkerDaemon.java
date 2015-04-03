@@ -54,7 +54,7 @@ public class WorkerDaemon implements Daemon {
     this.channel = channel;
   }
   
-  public void run() throws IOException {
+  public void run() throws IOException, InterruptedException {
     String basicQueue = config.getString("queue_register");
 
     HostInfo hi = new HostInfoFactory().getHostDetails();
