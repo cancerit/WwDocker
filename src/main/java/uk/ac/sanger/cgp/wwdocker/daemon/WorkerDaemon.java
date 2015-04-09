@@ -32,13 +32,19 @@
 package uk.ac.sanger.cgp.wwdocker.daemon;
 
 import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.QueueingConsumer;
+import java.io.File;
 import java.io.IOException;
-import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import uk.ac.sanger.cgp.wwdocker.factories.HostInfoFactory;
+import uk.ac.sanger.cgp.wwdocker.actions.Utils;
+import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
+import uk.ac.sanger.cgp.wwdocker.beans.WorkerResources;
+import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
-import uk.ac.sanger.cgp.wwdocker.interfaces.HostInfo;
+import uk.ac.sanger.cgp.wwdocker.messages.Produce;
 
 /**
  *
@@ -46,19 +52,53 @@ import uk.ac.sanger.cgp.wwdocker.interfaces.HostInfo;
  */
 public class WorkerDaemon implements Daemon {
   private static final Logger logger = LogManager.getLogger();
-  BaseConfiguration config;
+  PropertiesConfiguration config;
   Channel channel;
   
-  public WorkerDaemon(BaseConfiguration config, Channel channel) {
+  public WorkerDaemon(PropertiesConfiguration config, Channel channel) {
     this.config = config;
     this.channel = channel;
   }
   
-  public void run() throws IOException, InterruptedException {
-    String basicQueue = config.getString("queue_register");
+  public void run() throws IOException, InterruptedException, ConfigurationException {
+    WorkerResources hr = new WorkerResources();
+    logger.debug(Utils.objectToJson(hr));
+    
+    String exchange = config.getString("queue_active");
+    channel.exchangeDeclare(exchange, "direct");
+    String queueName = channel.queueDeclare().getQueue();
+    channel.queueBind(queueName, exchange, "reportIn");
+    
+    logger.info("Waiting for messages from primary:");
 
-    HostInfo hi = new HostInfoFactory().getHostDetails();
-    logger.debug(hi.toString());
-    logger.debug(hi.toJson());
+    QueueingConsumer consumer = new QueueingConsumer(channel);
+    channel.basicConsume(queueName, true, consumer);
+    
+    while (true) {
+      QueueingConsumer.Delivery delivery = consumer.nextDelivery();
+      String message = new String(delivery.getBody());
+      logger.trace("Recieved: " + message);
+      WorkerState requiredState = (WorkerState) Utils.jsonToObject(message, WorkerState.class);
+      // build a local WorkerState
+
+      File thisConfig = new File(config.getString("optDir") + "/remote.cfg");
+      File thisJar = Utils.thisJarFile();
+      WorkerState thisState = new WorkerState(thisJar, thisConfig);
+      
+      if(thisState.equals(requiredState)) {
+        thisState.setStatus(HostStatus.CLEAN);
+      }
+      else {
+        thisState.setStatus(HostStatus.RAW);
+      }
+
+      if(thisState.getStatus() == HostStatus.RAW) {
+        logger.info("State incompatible with next workflow execution, shutting down cleanly.");
+        System.exit(0); // I will be re-provisioned
+      }
+      
+      Produce.sendMessage(config, channel, config.getString("queue_register"), Utils.objectToJson(thisState));
+      
+    }
   }
 }

@@ -58,15 +58,15 @@ public class Config {
   private static Connection rmqConnection = null;
   private static Channel rmqChannel = null;
   
-  public static BaseConfiguration loadConfig(String configPath) throws ConfigurationException, IOException, AccessControlException {
+  public static PropertiesConfiguration loadConfig(String configPath) {
+    PropertiesConfiguration config;
     try {
       protectedFileCheck(configPath);
+      config = new PropertiesConfiguration(configPath);
     }
     catch(Exception e) {
-      throw new ConfigurationException("There was a problem reading your config file:\n" + e.toString());
+      throw new RuntimeException("There was a problem reading your config file:\n" + e.toString(), e);
     }
-    File configFile = new File(configPath);
-    BaseConfiguration config = new PropertiesConfiguration(configFile);
     return config;
   }
   
@@ -83,6 +83,17 @@ public class Config {
                                         );
       }
     }
+  }
+  
+  public static BaseConfiguration loadWorkers(String workerConfig) {
+    BaseConfiguration config;
+    try {
+      config = new PropertiesConfiguration(workerConfig);
+    }
+    catch (Exception e) {
+      throw new RuntimeException(e.toString(), e);
+    }
+    return config;
   }
   
   protected static Channel getRmqChannel(BaseConfiguration config) throws IOException {

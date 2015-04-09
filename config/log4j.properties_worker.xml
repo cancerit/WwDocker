@@ -30,12 +30,12 @@
 
   <Loggers>
   <Logger name="uk.ac.sanger.cgp.wwdocker" level="all" additivity="false">
-    <appender-ref ref="trace-log" level="info"/>
+    <appender-ref ref="trace-log" level="all"/>
     <appender-ref ref="error-log" level="error"/>
     <appender-ref ref="console-log" level="all"/>
   </Logger>
   
-  <Root level="info" additivity="false">
+  <Root level="fatal" additivity="false">
     <AppenderRef ref="console-log"/>
   </Root>
   

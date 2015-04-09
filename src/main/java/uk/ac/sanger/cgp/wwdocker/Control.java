@@ -33,6 +33,7 @@ package uk.ac.sanger.cgp.wwdocker;
 
 import com.rabbitmq.client.Channel;
 import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import uk.ac.sanger.cgp.wwdocker.factories.DaemonFactory;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
 import org.apache.logging.log4j.LogManager;
@@ -48,14 +49,14 @@ public class Control {
   public static void main(String[] argv) throws Exception {
     int exitCode = 0;
     if(argv.length != 2) {
-      System.err.println("Daemon type and configuration file must be supplied");
+      logger.fatal("Daemon type and configuration file must be supplied");
       System.exit(1);
     }
     
     String daemonType = argv[0];
     String configPath = argv[1];
     try {
-      BaseConfiguration config = Config.loadConfig(configPath);
+      PropertiesConfiguration config = Config.loadConfig(configPath);
       Channel channel = Config.getRmqChannel(config);
       
       Daemon runme = new DaemonFactory().getDaemon(daemonType, config, channel);
@@ -63,7 +64,6 @@ public class Control {
     }
     catch(Exception e) {
       logger.fatal("Unrecoverable error", e);
-      System.err.println(e.toString());
       exitCode = 1;
     }
     finally {

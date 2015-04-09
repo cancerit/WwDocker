@@ -31,6 +31,8 @@
 
 package uk.ac.sanger.cgp.wwdocker.beans;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.management.OperatingSystemMXBean;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
@@ -38,13 +40,12 @@ import java.net.UnknownHostException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.json.JSONObject;
-import uk.ac.sanger.cgp.wwdocker.interfaces.HostInfo;
 
 /**
  *
  * @author kr2
  */
-public class HostResources implements HostInfo {
+public class WorkerResources {
   private static final Logger logger = LogManager.getLogger();
   // Property sysLoadAvg
   double sysLoadAvg;
@@ -61,11 +62,14 @@ public class HostResources implements HostInfo {
   // Property hostName
   String hostName;
   
+  // Property hostStatus
+  Enum hostStatus; // this will be determined based on md5 sums of config and jar file
+  
   /** 
    * Constructor
    * @return HostResources
    */
-  public HostResources() {
+  public WorkerResources() {
     OperatingSystemMXBean osmxb = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
     sysLoadAvg = osmxb.getSystemLoadAverage();
     totalMemBytes = osmxb.getTotalPhysicalMemorySize();
@@ -80,15 +84,6 @@ public class HostResources implements HostInfo {
         throw new RuntimeException("Unable to determine hostname", e);
       }
     }
-  }
-  
-  public HostResources(String json) {
-    JSONObject jo = new JSONObject(json);
-    sysLoadAvg = jo.getDouble("sysLoadAvg");
-    totalMemBytes = jo.getLong("totalMemBytes");
-    freeMemBytes =  jo.getLong("freeMemBytes");
-    availableProcessors = jo.getInt("availableProcessors");
-    hostName = jo.getString("hostName");
   }
   
   /**
@@ -125,15 +120,7 @@ public class HostResources implements HostInfo {
   public String getHostName() {
     return this.hostName;
   }
-  
-  /**
-   * Gets the JSON string for this object
-   */
-  public String toJson() {
-    JSONObject jsonObj = new JSONObject( this );
-    return jsonObj.toString();
-  }
-  
+
   /**
   * Simple toString
   */

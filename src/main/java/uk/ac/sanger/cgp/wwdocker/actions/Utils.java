@@ -30,6 +30,14 @@
  */
 package uk.ac.sanger.cgp.wwdocker.actions;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -62,5 +70,55 @@ public class Utils {
       logger.log(type, "\t" + lines[i]);
     }
     return remainder;
+  }
+  
+  public static File thisJarFile() {
+    File thisJar = null;
+    try {
+      thisJar = new File(Remote.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath());
+      
+    }
+    catch(URISyntaxException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    return thisJar;
+  }
+  
+  public static String fileDigest(File file) {
+    String md5;
+    try {
+      FileInputStream fis = new FileInputStream(file);
+      md5 = DigestUtils.md5Hex(fis);
+      fis.close();
+    } catch (FileNotFoundException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    catch (IOException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    return md5;
+  }
+  
+  public static String objectToJson(Object obj) {
+    ObjectMapper mapper = new ObjectMapper();
+    String json;
+    try {
+      json = mapper.writeValueAsString(obj);
+    } catch (JsonProcessingException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    return json;
+  }
+  
+  public static Object jsonToObject(String json, Class classType) {
+    ObjectMapper mapper = new ObjectMapper();
+    Object obj;
+    try {
+      obj = mapper.readValue(json, classType);
+    }
+    catch (IOException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    return obj;
   }
 }

@@ -33,6 +33,7 @@ package uk.ac.sanger.cgp.wwdocker.factories;
 
 import com.rabbitmq.client.Channel;
 import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.daemon.PrimaryDaemon;
@@ -45,7 +46,7 @@ import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
  */
 public class DaemonFactory {
   private static final Logger logger = LogManager.getLogger();
-  public Daemon getDaemon(String daemonType, BaseConfiguration config, Channel channel) {
+  public Daemon getDaemon(String daemonType, PropertiesConfiguration config, Channel channel) {
     if(daemonType.equalsIgnoreCase("PRIMARY")) {
       logger.trace("Creating '"+ daemonType +"' daemon");
       return new PrimaryDaemon(config, channel);

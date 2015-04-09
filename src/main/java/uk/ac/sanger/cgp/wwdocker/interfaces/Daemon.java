@@ -32,11 +32,12 @@
 package uk.ac.sanger.cgp.wwdocker.interfaces;
 
 import java.io.IOException;
+import org.apache.commons.configuration.ConfigurationException;
 
 /**
  *
  * @author kr2
  */
 public interface Daemon {
-  void run() throws IOException, InterruptedException;
+  void run() throws IOException, InterruptedException, ConfigurationException;
 }

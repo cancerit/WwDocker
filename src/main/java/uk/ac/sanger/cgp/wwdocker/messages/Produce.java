@@ -38,8 +38,9 @@ import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import uk.ac.sanger.cgp.wwdocker.factories.HostInfoFactory;
-import uk.ac.sanger.cgp.wwdocker.interfaces.HostInfo;
+import uk.ac.sanger.cgp.wwdocker.actions.Utils;
+import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
+import uk.ac.sanger.cgp.wwdocker.beans.WorkerResources;
 
 /**
  *
@@ -47,38 +48,54 @@ import uk.ac.sanger.cgp.wwdocker.interfaces.HostInfo;
  */
 public class Produce {
   private static final Logger logger = LogManager.getLogger();
-  private static String REQ_ACTIVE = "REPORT IN";
   
-  public static Map<String, HostInfo> activeHosts(BaseConfiguration config, Channel channel) throws IOException, InterruptedException {
-    Map<String, HostInfo> hosts = new HashMap();
+  public static Map<String, WorkerState> activeHosts(BaseConfiguration config, Channel channel, WorkerState provState) throws IOException, InterruptedException {
+    Map<String, WorkerState> hosts = new HashMap();
     String exchange = config.getString("queue_active");
-    String excId = "["+exchange+"] ";
+    String excId = "[EX: "+exchange+"] ";
     
-    channel.exchangeDeclare(exchange, "fanout");
+    channel.exchangeDeclare(exchange, "direct");
     
-    logger.trace(excId + "send: "+REQ_ACTIVE);
+    logger.trace(excId + "send: "+ Utils.objectToJson(provState));
     
-    channel.basicPublish(exchange, "", null, REQ_ACTIVE.getBytes());
+    channel.basicPublish(exchange, "reportIn", null, Utils.objectToJson(provState).getBytes());
     
-    String queueName = channel.queueDeclare().getQueue();
+    
+    //// END OF SEND
+    
+    // we listen on a different queue though
+    
+//    int i=0;
+//    while(true){if(i++ == 1000) { break; } Thread.sleep(1000);};
+    
+    String queueName = config.getString("queue_register");
     channel.queueBind(queueName, exchange, "");
     
     QueueingConsumer consumer = new QueueingConsumer(channel);
-    channel.basicConsume(queueName, true, consumer);
+    channel.basicConsume(config.getString("queue_register"), true, consumer);
     
-    HostInfoFactory hif = new HostInfoFactory();
-    int deliveryTimeout = config.getInt("queue_wait");
+    long deliveryTimeout = config.getLong("queue_wait");
     logger.trace(excId + "poll responses");
+    Thread.sleep(deliveryTimeout); // sleep before the first event
     while (true) {
       QueueingConsumer.Delivery delivery = consumer.nextDelivery(deliveryTimeout);
       if(delivery == null) {
         logger.trace(excId + "no more responses");
         break;
       }
-      HostInfo hi = hif.getHostDetailsFromString(new String(delivery.getBody()));
-      logger.trace(excId + "recieved: " + hi.toString());
-      hosts.put(hi.getHostName(), hi);
+      String response = new String(delivery.getBody());
+      logger.trace(excId + "recieved: " + response);
+      
+      WorkerState ps = (WorkerState) Utils.jsonToObject(response, WorkerState.class);
+      hosts.put(ps.getResource().getHostName(), ps);
+      
     }
     return hosts;
+  }
+  
+   public static void sendMessage(BaseConfiguration config, Channel channel, String queue, String message) throws IOException, InterruptedException {
+    channel.queueDeclare(queue, false, false, false, null);
+    channel.basicPublish("", queue, null, message.getBytes());
+    logger.trace("[Q: "+queue+"] send: "+message);
   }
 }

@@ -80,14 +80,23 @@ public class Remote {
     }
   }
   
-  public static void sendThisJar(Session session) {
-    try {
-      File thisJar = new File(Remote.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath());
-      
+  public static void cleanHost(Session session, String[] paths) {
+    if(paths.length == 0) {
+      throw new RuntimeException("Potentially deleting root of storage, aborting");
     }
-    catch(URISyntaxException e) {
-      throw new RuntimeException(e.getMessage(), e);
+    String command = "rm -rf";
+    for(String p : paths) {
+      if(p.length() == 0) {
+        throw new RuntimeException("Potentially deleting root of storage, aborting");
+      }
+      command = command.concat(" ").concat(p).concat("/*");
     }
+    paramExec(session, command);
+  }
+  
+  public static void expandJre(Session session, File localJre) {
+    String command = "tar --strip-components=1 -C /opt/jre -zxf /opt/".concat(localJre.getName());
+    paramExec(session, command);
   }
   
   public static void createPaths(Session session, String[] paths) {
@@ -95,15 +104,27 @@ public class Remote {
     paramExec(session, command, paths);
   }
   
-  public static void chmodPaths(Session session, String mode, String[] paths) {
-    String command = "chown " + mode;
+  public static void chmodPath(Session session, String mode, String path, boolean recursive) {
+    String[] paths = {path};
+    chmodPaths(session, mode, paths, recursive);
+  }
+  
+  public static void chmodPaths(Session session, String mode, String[] paths, boolean recursive) {
+    String command = "chmod ";
+    if(recursive) {
+      command = command.concat("-R ");
+    }
+    command = command.concat(mode);
     paramExec(session, command, paths);
   }
   
-  private static void paramExec(Session session, String baseCommand, String[] params) {
-    String command = null;
+  private static void paramExec(Session session, String command) {
+    paramExec(session, command, new String[0]);
+  }
+  
+  private static void paramExec(Session session, String command, String[] params) {
     for(String param:params) {
-      command = baseCommand.concat(" ").concat(param);
+      command = command.concat(" ").concat(param);
     }
     try {
       execCommand(session, command);
@@ -121,12 +142,25 @@ public class Remote {
     }
   }
   
+  public static void startWorkerDaemon(Session session, String jarName) {
+    //java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
+    String command = "/opt/jre/bin/java -Xmx128m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
+                      .concat(jarName)
+                      .concat(" Worker /opt/remote.cfg")
+                      .concat(" >& /dev/null &");
+    try {
+      execCommand(session, command);
+    } catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection while starting daemon", e);
+    }
+  }
+  
   private static int execCommand(Session session, String command) throws JSchException {
     int exitCode = -1;
     
     Channel channel=session.openChannel("exec");
     ((ChannelExec)channel).setCommand(command);
-    logger.trace("Remote exection of command: "+ command);
+    logger.trace("Remote exection of command: [".concat(session.getHost()).concat("]: ").concat(command));
     String fullOut = new String();
     try {
       InputStream in=channel.getInputStream();
@@ -158,7 +192,7 @@ public class Remote {
   
   protected static int fileTo(Session session, String localFile, String remoteFile) throws JSchException {
     int exitCode = -1;
-    logger.info("Sending file to remote: ".concat(localFile));
+    logger.info("Sending file to remote [".concat(session.getHost()).concat("]: ").concat(localFile));
     boolean ptimestamp = true;
     // exec 'scp -t rfile' remotely
     String command="scp " + (ptimestamp ? "-p" :"") +" -t "+remoteFile;
