@@ -42,14 +42,11 @@ import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.json.JSONObject;
 import uk.ac.sanger.cgp.wwdocker.Config;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
 import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
-import uk.ac.sanger.cgp.wwdocker.beans.WorkerResources;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
-import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
 import uk.ac.sanger.cgp.wwdocker.messages.Produce;
 
@@ -72,10 +69,23 @@ public class PrimaryDaemon implements Daemon {
   public void run() throws IOException, InterruptedException, ConfigurationException {
     String basicQueue = config.getString("queue_register");
     
+    // lots of values that will be used over and over again
     File jreDist = new File(config.getString("jreDist"));
     File thisJar = Utils.thisJarFile();
     File tmpConf = new File(System.getProperty("java.io.tmpdir") + "/remote.cfg");
     config.save(tmpConf.getAbsolutePath()); // done like this so includes are pulled in
+    Local.chmod(tmpConf, "go-rwx");
+    String remoteWorkflowDir = config.getString("workflowDir");
+    String remoteDatastoreDir = config.getString("datastoreDir");
+    String localSeqwareJar = config.getString("seqware"); // can be http location
+    String localWorkflowZip = config.getString("workflow"); // can be http location
+    File remoteSeqwareJar = new File(remoteWorkflowDir.concat("/").concat(localSeqwareJar.replaceAll(".*/", "")));
+    File remoteWorkflowZip = new File(remoteWorkflowDir.concat("/").concat(localWorkflowZip.replaceAll(".*/", "")));
+    String baseDockerImage = config.getString("baseDockerImage");
+    String[] provisionPaths = config.getStringArray("provisionPaths");
+    String optDir = "/opt";
+    String workerLog = config.getString("log4-worker");
+    File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
     
     // this holds md5 of this JAR and the config (which lists the workflow code to use)
     WorkerState provState = new WorkerState(thisJar, tmpConf);
@@ -125,23 +135,27 @@ public class PrimaryDaemon implements Daemon {
         Session ssh = Remote.getSession(config, host);
         
         // clean and setup paths
-        Remote.cleanHost(ssh, config.getStringArray("provisionPaths"));
-        Remote.createPaths(ssh, config.getStringArray("provisionPaths"));
-        Remote.chmodPaths(ssh, "a+wrx", config.getStringArray("provisionPaths"), true);
+        Remote.cleanHost(ssh, provisionPaths);
+        Remote.createPaths(ssh, provisionPaths);
+        Remote.chmodPaths(ssh, "a+wrx", provisionPaths, true);
         
         // setup docker and the seqware image
-        Remote.stageDocker(ssh, config.getString("baseDockerImage"));
-        Local.pushToHost(config.getString("seqwareBase"), host, config.getString("workflowDir"), envs, ssh);
+        Remote.stageDocker(ssh, baseDockerImage);
+        Local.pushToHost(localSeqwareJar, host, remoteWorkflowDir, envs, ssh, localTmp);
+        
+        // send the workflow
+        Local.pushToHost(localWorkflowZip, host, remoteWorkflowDir, envs, ssh, localTmp);
+        Remote.expandWorkflow(ssh, remoteWorkflowZip, remoteSeqwareJar, remoteWorkflowDir);
         
         // send the code needed to run the worker daemon, 
         // DON'T send required items after this point as starting the daemon signifies successful setup
-        Local.pushToHost(jreDist.getAbsolutePath(), host, config.getString("optDir"), envs, ssh);
+        Local.pushToHost(jreDist.getAbsolutePath(), host, optDir, envs, ssh, localTmp);
         Remote.expandJre(ssh, jreDist);
-        Local.pushToHost(thisJar.getAbsolutePath(), host, config.getString("optDir"), envs, ssh);
-        Local.pushToHost(config.getString("log4-worker"), host, config.getString("optDir"), envs, ssh);
-        Local.pushToHost(tmpConf.getAbsolutePath(), host, config.getString("optDir"), envs, ssh);
+        Local.pushToHost(thisJar.getAbsolutePath(), host, optDir, envs, ssh, localTmp);
+        Local.pushToHost(workerLog, host, optDir, envs, ssh, localTmp);
+        Local.pushToHost(tmpConf.getAbsolutePath(), host, optDir, envs, ssh, localTmp);
         tmpConf.delete();
-        Remote.chmodPath(ssh, "go-wrx", config.getString("optDir").concat("/*"), true); // file will have passwords
+        Remote.chmodPath(ssh, "go-wrx", optDir.concat("/*"), true); // file will have passwords
 
         Remote.startWorkerDaemon(ssh, thisJar.getName());
         ssh.disconnect();

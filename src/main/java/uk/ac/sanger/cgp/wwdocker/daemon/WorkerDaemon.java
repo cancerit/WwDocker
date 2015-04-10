@@ -39,6 +39,7 @@ import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import uk.ac.sanger.cgp.wwdocker.actions.Docker;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerResources;
@@ -74,23 +75,45 @@ public class WorkerDaemon implements Daemon {
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queueName, true, consumer);
     
+    long deliveryTimeout = config.getLong("queue_wait");
+    File thisConfig = new File(config.getString("optDir") + "/remote.cfg");
+    File thisJar = Utils.thisJarFile();
+    
+    Thread dockerThread = null;
+    WorkerState requiredState = null;
+    
     while (true) {
-      QueueingConsumer.Delivery delivery = consumer.nextDelivery();
-      String message = new String(delivery.getBody());
-      logger.trace("Recieved: " + message);
-      WorkerState requiredState = (WorkerState) Utils.jsonToObject(message, WorkerState.class);
+      
+      // are there any messages?
+      QueueingConsumer.Delivery delivery = consumer.nextDelivery(deliveryTimeout);
+      if(delivery != null) {
+        String message = new String(delivery.getBody());
+        logger.trace("Recieved: " + message);
+        requiredState = (WorkerState) Utils.jsonToObject(message, WorkerState.class);
+      }
+      
       // build a local WorkerState
-
-      File thisConfig = new File(config.getString("optDir") + "/remote.cfg");
-      File thisJar = Utils.thisJarFile();
       WorkerState thisState = new WorkerState(thisJar, thisConfig);
       
-      if(thisState.equals(requiredState)) {
-        thisState.setStatus(HostStatus.CLEAN);
+      if(dockerThread == null) {
+        // no docker job running
+        if(thisState.equals(requiredState)) {
+          thisState.setStatus(HostStatus.CLEAN);
+        }
+        else {
+          thisState.setStatus(HostStatus.RAW);
+        }
       }
       else {
-        thisState.setStatus(HostStatus.RAW);
+        if(dockerThread.isAlive()) {
+          thisState.setStatus(HostStatus.RUNNING);
+        }
       }
+      
+      
+
+      
+
 
       if(thisState.getStatus() == HostStatus.RAW) {
         logger.info("State incompatible with next workflow execution, shutting down cleanly.");
@@ -98,7 +121,6 @@ public class WorkerDaemon implements Daemon {
       }
       
       Produce.sendMessage(config, channel, config.getString("queue_register"), Utils.objectToJson(thisState));
-      
     }
   }
 }

@@ -4,11 +4,11 @@ THIS IS A WORK IN PROGRESS
 # Basic execution
 After compile the code can be run using the following:
 
-``
+```
 java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
-``
+```
 
-This will provision all hosts listed in the file indicates by the config value 'workerCfg' defined in ``config/default.cfg``.
+This will provision all hosts listed in the file indicates by the config value 'workerCfg' defined in `config/default.cfg`.
 Once provisioned a worker daemon will be started on the host and await work.
 
 More detailed documentation will be added soon.

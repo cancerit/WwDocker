@@ -38,6 +38,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -70,6 +71,33 @@ public class Utils {
       logger.log(type, "\t" + lines[i]);
     }
     return remainder;
+  }
+  
+  public static File expandUserDirPath(BaseConfiguration config, String parameter, boolean checkExists) {
+    File thing = expandUserFilePath(config, parameter, checkExists);
+    if(!thing.isDirectory()) {
+      throw new RuntimeException("Path indicated by '"+parameter+"="+config.getString(parameter)+"' is not a directory once expanded to '"+thing.getAbsolutePath()+"'");
+    }
+    return thing;
+  }
+  
+  public static File expandUserFilePath(BaseConfiguration config, String parameter, boolean checkExists) {
+    String localTmp = config.getString(parameter);
+    if(localTmp.startsWith("~")) {
+      logger.trace("Attempting to expand path: " + localTmp);
+      if(localTmp.startsWith("~/")) {
+        localTmp = localTmp.replaceFirst("^~", System.getProperty("user.home"));
+      }
+      else {
+        throw new RuntimeException("Config value for '"+parameter+"' must be a full path or begin '~/'");
+      }
+      logger.trace("Expanded path: " + localTmp);
+    }
+    File expanded = new File(localTmp);
+    if(!expanded.exists()) {
+      throw new RuntimeException("File or path indicated by '"+parameter+"="+config.getString(parameter)+"' does not exist once expanded to '"+localTmp+"'");
+    }
+    return expanded;
   }
   
   public static File thisJarFile() {

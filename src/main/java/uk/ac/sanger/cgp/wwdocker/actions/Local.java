@@ -38,6 +38,7 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
+import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.Level;
@@ -51,18 +52,53 @@ import org.apache.logging.log4j.Logger;
 public class Local {
   private static final Logger logger = LogManager.getLogger();
   
-  public static void pushFileSetToHost(String[] sources, String destHost, String destPath, Map envs, Session session) {
+  public static int runDocker(BaseConfiguration config) {
+    /**
+     * docker run --rm -h master -t
+     * -v /cgp/datastore:/datastore
+     * -v /cgp/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow
+     * -i seqware/seqware_whitestar_pancancer
+     * seqware bundle launch
+     * --no-metadata
+     * --engine whitestar-parallel
+     * --dir /workflow
+     * --ini /datastore/testRun.ini
+     */
+    
+    File workflow = new File(config.getString("workflowDir")
+                              .concat("/")
+                              .concat(config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", ""))
+                            );
+    
+    String command = "docker run --rm -h master -t";
+    command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
+    command = command.concat(" -v ").concat(config.getString("workflow")).concat(":/workflow");
+    command = command.concat(" -i seqware/seqware_whitestar_pancancer");
+    command = command.concat(" seqware bundle launch --no-metadata --engine whitestar-parallel");
+    command = command.concat(" --dir /workflow");
+    command = command.concat(" --ini /datastore/work.ini");
+    // this may need to be more itelligent than just the exit code
+    return execCommand(command);
+  }
+  
+  public static void pushFileSetToHost(String[] sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
     for(String source : sources) {
-      pushToHost(source, destHost, destPath, envs, session);
+      pushToHost(source, destHost, destPath, envs, session, tmpIn);
     }
   }
   
-  public static int pushToHost(String source, String destHost, String destPath, Map envs, Session session) {
+  public static int pushToHost(String source, String destHost, String destPath, Map envs, Session session, File tmpIn) {
     String localFile = source;
     int exitCode = -1;
     if(source.startsWith("http") || source.startsWith("ftp")) {
       String[] elements = source.split("/");
-      String localTmp = System.getProperty("java.io.tmpdir");
+      String localTmp;
+      if(tmpIn != null) {
+        localTmp = tmpIn.getAbsolutePath();
+      }
+      else {
+        localTmp = System.getProperty("java.io.tmpdir");
+      }
       if(!localTmp.endsWith(System.getProperty("file.separator"))) {
         localTmp = localTmp.concat(System.getProperty("file.separator"));
       }
@@ -80,6 +116,11 @@ public class Local {
       throw new RuntimeException("Failure in SSH connection", e);
     }
     return exitCode;
+  }
+  
+  public static void chmod(File f, String perms) {
+    String command = "chmod ".concat(perms).concat(" ").concat(f.getAbsolutePath());
+    execCommand(command);
   }
   
   private static int execCommand(String command) {

@@ -41,7 +41,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URISyntaxException;
+import java.util.Properties;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -54,19 +54,74 @@ public class Remote {
   private static final Logger logger = LogManager.getLogger();
   private static final int SSH_TIMEOUT = 10000; // 10 seconds
   
+  
+  private static Session addNewHost(BaseConfiguration config, String host) {
+    Session session = null;
+    logger.warn("Host '" + host + "' is not known attempting to resolve");
+    try {
+      Session thisSess = unconnectedSession(config, host);
+
+      Properties props = new Properties();
+      props.put("StrictHostKeyChecking", "no");  
+      thisSess.setConfig(props);
+
+      thisSess.connect(SSH_TIMEOUT);
+      
+      session = thisSess;
+    }
+    catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection: "+e.getMessage(), e);
+    }
+    logger.warn("Successfully added new key for '" + host + "'");
+    return session;
+  }
+  
+  private static File privateKeyFile() {
+    String fSep = System.getProperty("file.separator");
+    File key = new File(System.getProperty("user.home") + fSep + ".ssh" + fSep + "id_dsa");
+    if(!key.exists()) {
+      key = new File(System.getProperty("user.home") + fSep + ".ssh" + fSep + "id_rsa");
+    }
+    if(!key.exists()) {
+      throw new RuntimeException("Unable to find any identity key files, e.g. ~/.ssh/id_dsa or ~/.ssh/id_rsa");
+    }
+    return key;
+  }
+  
+  private static Session unconnectedSession(BaseConfiguration config, String host) {
+    Session session;
+    String fSep = System.getProperty("file.separator");
+    String userKnownHosts = System.getProperty("user.home") + fSep + ".ssh" + fSep + "known_hosts";
+    try {
+      JSch jsch = new JSch();
+      jsch.setKnownHosts(userKnownHosts);
+      jsch.addIdentity(privateKeyFile().getAbsolutePath());
+      Session thisSess=jsch.getSession(config.getString("ssh_user"), host, 22);
+      thisSess.setPassword(config.getString("ssh_pw"));
+      session = thisSess;
+    }
+    catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection: "+e.getMessage(), e);
+    }
+    return session;
+  }
+  
   public static Session getSession(BaseConfiguration config, String host) {
     Session session;
     try {
-      String fSep = System.getProperty("file.separator");
-      String userKnownHosts = System.getProperty("user.home") + fSep + ".ssh" + fSep + "known_hosts";
-      JSch jsch = new JSch();
-      jsch.setKnownHosts(userKnownHosts);
-      session=jsch.getSession(config.getString("ssh_user"), host, 22);
-      session.setPassword(config.getString("ssh_pw"));
-      session.connect(SSH_TIMEOUT);
+      Session thisSess = unconnectedSession(config, host);
+      thisSess.connect(SSH_TIMEOUT);
+      logger.info("Host '" + host + "' is known");
+      session = thisSess;
     }
     catch(JSchException e) {
-      throw new RuntimeException("Failure in SSH connection", e);
+      if(e.getMessage().startsWith("UnknownHostKey")) {
+        session = addNewHost(config, host);
+      }
+      else {
+        // still falls over if the host key is changed
+        throw new RuntimeException("Failure in SSH connection: "+e.getMessage(), e);
+      }
     }
     return session;
   }
@@ -96,6 +151,19 @@ public class Remote {
   
   public static void expandJre(Session session, File localJre) {
     String command = "tar --strip-components=1 -C /opt/jre -zxf /opt/".concat(localJre.getName());
+    paramExec(session, command);
+  }
+  
+  public static void expandWorkflow(Session session, File localWorkflow, File seqwareJar, String workflowBase) {
+    //java -cp seqware-distribution-1.1.0-alpha.6-full.jar net.sourceforge.seqware.pipeline.tools.UnZip --input-zip
+    String workflowDir = workflowBase.concat("/").concat(localWorkflow.getName());
+    workflowDir = workflowDir.replaceFirst("[.]zip$", "");
+    String command = "/opt/jre/bin/java -Xmx128m -cp ";
+    command = command.concat(seqwareJar.getAbsolutePath());
+    command = command.concat(" net.sourceforge.seqware.pipeline.tools.UnZip --input-zip ");
+    command = command.concat(localWorkflow.getAbsolutePath());
+    command = command.concat(" --output-dir ");
+    command = command.concat(workflowDir);
     paramExec(session, command);
   }
   
