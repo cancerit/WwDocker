@@ -81,6 +81,14 @@ public class Utils {
     return thing;
   }
   
+  public static File expandUserFile(BaseConfiguration config, String parameter, boolean checkExists) {
+    File thing = expandUserFilePath(config, parameter, checkExists);
+    if(!thing.isFile()) {
+      throw new RuntimeException("Path indicated by '"+parameter+"="+config.getString(parameter)+"' is not a file once expanded to '"+thing.getAbsolutePath()+"'");
+    }
+    return thing;
+  }
+  
   public static File expandUserFilePath(BaseConfiguration config, String parameter, boolean checkExists) {
     String localTmp = config.getString(parameter);
     if(localTmp.startsWith("~")) {

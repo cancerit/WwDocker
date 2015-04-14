@@ -39,5 +39,5 @@ import org.apache.commons.configuration.ConfigurationException;
  * @author kr2
  */
 public interface Daemon {
-  void run() throws IOException, InterruptedException, ConfigurationException;
+  void run(Boolean test) throws IOException, InterruptedException, ConfigurationException;
 }

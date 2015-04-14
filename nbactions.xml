@@ -10,7 +10,7 @@
                 <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
             </goals>
             <properties>
-                <exec.args>-Xmx50m -classpath %classpath uk.ac.sanger.cgp.wwdocker.Control Primary config/default.cfg</exec.args>
+                <exec.args>-Xmx50m -Dlog4j.configurationFile="config/log4j.properties.xml" -classpath %classpath uk.ac.sanger.cgp.wwdocker.TestMain</exec.args>
                 <exec.executable>java</exec.executable>
             </properties>
         </action>
@@ -24,7 +24,7 @@
                 <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
             </goals>
             <properties>
-                <exec.args>-Xdebug -Xrunjdwp:transport=dt_socket,server=n,address=${jpda.address} -Xmx50m -classpath %classpath uk.ac.sanger.cgp.wwdocker.Control Primary config/default.cfg</exec.args>
+                <exec.args>-Xdebug -Xrunjdwp:transport=dt_socket,server=n,address=${jpda.address} -Xmx50m -Dlog4j.configurationFile="config/log4j.properties.xml" -classpath %classpath uk.ac.sanger.cgp.wwdocker.TestMain</exec.args>
                 <exec.executable>java</exec.executable>
                 <jpda.listen>true</jpda.listen>
             </properties>
@@ -39,7 +39,7 @@
                 <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
             </goals>
             <properties>
-                <exec.args>-Xmx50m -classpath %classpath uk.ac.sanger.cgp.wwdocker.Control Primary config/default.cfg</exec.args>
+                <exec.args>-Xmx50m -Dlog4j.configurationFile="config/log4j.properties.xml" -classpath %classpath uk.ac.sanger.cgp.wwdocker.TestMain</exec.args>
                 <exec.executable>java</exec.executable>
             </properties>
         </action>
@@ -52,7 +52,7 @@
                 
             </goals>
             <properties>
-                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg</exec.args>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg test</exec.args>
                 <exec.executable>java</exec.executable>
                 
             </properties>
@@ -66,6 +66,18 @@
             </goals>
             <properties>
                 <exec.args>-Dlog4j.configurationFile="config/log4j.properties.xml" -classpath %classpath uk.ac.sanger.cgp.wwdocker.Control worker config/default.cfg</exec.args>
+                <exec.executable>java</exec.executable>
+            </properties>
+        </action>
+        <action>
+            <actionName>CUSTOM-Wibble</actionName>
+            <displayName>Wibble</displayName>
+            <goals>
+                <goal>process-classes</goal>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.args>-Xmx50m -classpath %classpath uk.ac.sanger.cgp.wwdocker.TestMain</exec.args>
                 <exec.executable>java</exec.executable>
             </properties>
         </action>

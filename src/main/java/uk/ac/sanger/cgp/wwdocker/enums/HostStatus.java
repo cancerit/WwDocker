@@ -35,7 +35,6 @@ package uk.ac.sanger.cgp.wwdocker.enums;
  * @author kr2
  */
 public enum HostStatus {
-  RAW, // needs provisoning
   CLEAN, // ready for data to be pushed to staging area
   RUNNING, // workflow started
   ERROR, // workflow has error state

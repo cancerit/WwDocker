@@ -31,14 +31,13 @@
 
 package uk.ac.sanger.cgp.wwdocker.factories;
 
-import com.rabbitmq.client.Channel;
-import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.daemon.PrimaryDaemon;
 import uk.ac.sanger.cgp.wwdocker.daemon.WorkerDaemon;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
+import uk.ac.sanger.cgp.wwdocker.messages.Messaging;
 
 /**
  *
@@ -46,14 +45,14 @@ import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
  */
 public class DaemonFactory {
   private static final Logger logger = LogManager.getLogger();
-  public Daemon getDaemon(String daemonType, PropertiesConfiguration config, Channel channel) {
+  public Daemon getDaemon(String daemonType, PropertiesConfiguration config, Messaging rmq) {
     if(daemonType.equalsIgnoreCase("PRIMARY")) {
       logger.trace("Creating '"+ daemonType +"' daemon");
-      return new PrimaryDaemon(config, channel);
+      return new PrimaryDaemon(config, rmq);
     }
     else if(daemonType.equalsIgnoreCase("WORKER")) {
       logger.trace("Creating '"+ daemonType +"' daemon");
-      return new WorkerDaemon(config, channel);
+      return new WorkerDaemon(config, rmq);
     }
     throw new RuntimeException("Daemon type must be 'primary' or 'worker': " + daemonType);
   }

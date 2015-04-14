@@ -32,20 +32,19 @@
 package uk.ac.sanger.cgp.wwdocker.daemon;
 
 import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.QueueingConsumer;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import uk.ac.sanger.cgp.wwdocker.actions.Docker;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerResources;
 import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
-import uk.ac.sanger.cgp.wwdocker.messages.Produce;
+import uk.ac.sanger.cgp.wwdocker.messages.Messaging;
 
 /**
  *
@@ -54,73 +53,80 @@ import uk.ac.sanger.cgp.wwdocker.messages.Produce;
 public class WorkerDaemon implements Daemon {
   private static final Logger logger = LogManager.getLogger();
   PropertiesConfiguration config;
-  Channel channel;
+  Messaging messaging;
   
-  public WorkerDaemon(PropertiesConfiguration config, Channel channel) {
+  public WorkerDaemon(PropertiesConfiguration config, Messaging rmq) {
     this.config = config;
-    this.channel = channel;
+    this.messaging = rmq;
   }
   
-  public void run() throws IOException, InterruptedException, ConfigurationException {
+  public void run(Boolean testMode) throws IOException, InterruptedException, ConfigurationException {
     WorkerResources hr = new WorkerResources();
     logger.debug(Utils.objectToJson(hr));
     
-    String exchange = config.getString("queue_active");
-    channel.exchangeDeclare(exchange, "direct");
-    String queueName = channel.queueDeclare().getQueue();
-    channel.queueBind(queueName, exchange, "reportIn");
-    
-    logger.info("Waiting for messages from primary:");
-
-    QueueingConsumer consumer = new QueueingConsumer(channel);
-    channel.basicConsume(queueName, true, consumer);
-    
-    long deliveryTimeout = config.getLong("queue_wait");
-    File thisConfig = new File(config.getString("optDir") + "/remote.cfg");
+    File thisConfig = new File("/opt/remote.cfg");
     File thisJar = Utils.thisJarFile();
     
     Thread dockerThread = null;
-    WorkerState requiredState = null;
     
+    HostStatus currentState = HostStatus.CLEAN; // if running must be clean or in some processing state
+    // build a local WorkerState
+    WorkerState thisState = new WorkerState(thisJar, thisConfig);
+    WorkerState requiredState = null;
     while (true) {
-      
       // are there any messages?
-      QueueingConsumer.Delivery delivery = consumer.nextDelivery(deliveryTimeout);
-      if(delivery != null) {
-        String message = new String(delivery.getBody());
-        logger.trace("Recieved: " + message);
-        requiredState = (WorkerState) Utils.jsonToObject(message, WorkerState.class);
-      }
-      
-      // build a local WorkerState
-      WorkerState thisState = new WorkerState(thisJar, thisConfig);
-      
-      if(dockerThread == null) {
-        // no docker job running
-        if(thisState.equals(requiredState)) {
-          thisState.setStatus(HostStatus.CLEAN);
-        }
-        else {
-          thisState.setStatus(HostStatus.RAW);
-        }
+      List<String> messages = messaging.getMessageStrings("wwd_"+thisState.getResource().getHostName(), 1000);
+      if(messages.size() > 0) {
+        requiredState = (WorkerState) Utils.jsonToObject(messages.get(0), WorkerState.class);
+        thisState = new WorkerState(thisJar, thisConfig); // update the host info
+        currentState = determineState(requiredState, dockerThread, thisState);
+        thisState.setStatus(currentState);
+        messaging.sendMessage("wwd-register", Utils.objectToJson(thisState));
       }
       else {
-        if(dockerThread.isAlive()) {
-          thisState.setStatus(HostStatus.RUNNING);
-        }
+        // we still want to keep track of the state even if no messages
+        currentState = determineState(requiredState, dockerThread, thisState);
+        thisState.setStatus(currentState);
       }
       
       
-
-      
-
-
-      if(thisState.getStatus() == HostStatus.RAW) {
-        logger.info("State incompatible with next workflow execution, shutting down cleanly.");
-        System.exit(0); // I will be re-provisioned
-      }
-      
-      Produce.sendMessage(config, channel, config.getString("queue_register"), Utils.objectToJson(thisState));
+      Thread.sleep(1000);
     }
+  }
+  
+  private static HostStatus determineState(WorkerState requiredState, Thread dockerThread, WorkerState currentState) {
+    
+    /**
+     * Progression of states as follows
+     * CLEAN -> RUNNING
+     * RUNNING -> ERROR/DONE
+     * DONE -> RECYCLE
+     * ERROR -> ??
+     * 
+     * Only CLEAN is affected by requiredState
+     */
+    
+    
+    HostStatus hs = currentState.getStatus();
+    if(hs == null) {
+      hs = HostStatus.CLEAN;
+    }
+    if(hs == HostStatus.CLEAN && requiredState != null && !requiredState.equals(currentState)) {
+      logger.fatal("State incompatible with next workflow execution, shutting down cleanly.");
+      System.exit(0); // I will be re-provisioned as I am not running
+    }
+    if(hs == HostStatus.RUNNING) {
+      if(!dockerThread.isAlive()) {
+        // check for errors and state changes
+        hs = HostStatus.DONE; 
+        //hs = HostStatus.ERROR; 
+        throw new RuntimeException("TODO: Need to determine if ended thread is successful or failed");
+      }
+    } else if(hs == HostStatus.DONE || hs == HostStatus.ERROR || hs == HostStatus.RECYCLE) {
+      throw new RuntimeException("TODO: how should this be handled?");
+    }
+    logger.info("HostStatus: " + hs);
+    
+    return hs;
   }
 }
