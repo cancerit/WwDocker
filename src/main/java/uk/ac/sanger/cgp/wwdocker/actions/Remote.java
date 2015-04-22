@@ -127,7 +127,18 @@ public class Remote {
   }
   
   public static void stageDocker(Session session, String image) {
+    cleanupOldImages(session); // incase lots of stale ones are already present
     String command = "docker pull " + image;
+    try {
+      execCommand(session, command);
+    } catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection", e);
+    }
+    cleanupOldImages(session); // incase we replaced one
+  }
+  
+  private static void cleanupOldImages(Session session) {
+    String command = "docker images | grep \"<none>\" | awk '{print $3}' | xargs docker rmi";
     try {
       execCommand(session, command);
     } catch(JSchException e) {
@@ -139,12 +150,23 @@ public class Remote {
     if(paths.length == 0) {
       throw new RuntimeException("Potentially deleting root of storage, aborting");
     }
-    String command = "rm -rf";
     for(String p : paths) {
+      String command = "rm -rf";
       if(p.length() == 0) {
         throw new RuntimeException("Potentially deleting root of storage, aborting");
       }
       command = command.concat(" ").concat(p).concat("/*");
+      paramExec(session, command);
+    }
+  }
+  
+  public static void cleanFiles(Session session, String[] files) {
+    String command = "rm -f";
+    for(String p : files) {
+      if(p.equals("/*")) {
+        throw new RuntimeException("Potentially deleting root of storage, aborting");
+      }
+      command = command.concat(" ").concat(p);
     }
     paramExec(session, command);
   }
@@ -210,13 +232,13 @@ public class Remote {
     }
   }
   
-  public static void startWorkerDaemon(Session session, String jarName, Boolean testMode) {
+  public static void startWorkerDaemon(Session session, String jarName, String mode) {
     //java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
     String command = "/opt/jre/bin/java -Xmx128m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
                       .concat(jarName)
                       .concat(" Worker /opt/remote.cfg");
-    if(testMode) {
-      command = command.concat(" test");
+    if(mode != null) {
+      command = command.concat(" ").concat(mode);
     }
     command = command.concat(" >& /dev/null &");
     try {
@@ -261,12 +283,97 @@ public class Remote {
     return exitCode;
   }
   
-  protected static int fileTo(Session session, String localFile, String remoteFile) throws JSchException {
+  private static boolean remoteIsEqual(Session session, String localPath, String remotePath) throws JSchException {
+    boolean isEqual = false;
+    
+    File lFile = new File(localPath);
+    
+    if(remotePath.endsWith("/.")) {
+      remotePath = remotePath.substring(0, remotePath.length()-1).concat(lFile.getName());
+    }
+
+    String rawString = remoteExecStdout(session, "date --utc --reference=" + remotePath + " +%s");
+    if(rawString == null) {
+      logger.debug("no existing remote file: "+ remotePath);
+    }
+    else {
+      long rMtime = Long.valueOf(rawString).longValue() * 1000;
+      long rSize = Long.valueOf(remoteExecStdout(session, "ls -l --full-time " + remotePath).split("\\s+")[4]).longValue();
+
+      logger.debug("lFile size: " + lFile.length());
+      logger.debug("rFile size: " + rSize);
+      logger.debug("lFile mtime: " + lFile.lastModified());
+      logger.debug("rFile mtime: " + rMtime);
+
+      if(rMtime == lFile.lastModified() && rSize == lFile.length()) {
+        isEqual = true;
+      }
+    }
+    
+    return isEqual;
+  }
+  
+  public static boolean processExists(Session session, Long pid) throws JSchException {
+    boolean exists = false;
+    int exitCode = execCommand(session, "ps " + pid);
+    if(exitCode == 0) {
+      exists = true;
+    }
+    return exists;
+  }
+  
+  private static String remoteExecStdout(Session session, String command) throws JSchException {
     int exitCode = -1;
+    
+    Channel channel=session.openChannel("exec");
+    ((ChannelExec)channel).setCommand(command);
+    logger.trace("Remote exection of command: [".concat(session.getHost()).concat("]: ").concat(command));
+    String fullOut = new String();
+    try {
+      InputStream in=channel.getInputStream();
+      channel.connect();
+      byte[] tmp=new byte[1024];
+      while(true){
+        while(in.available()>0){
+          int i=in.read(tmp, 0, 1024);
+          if(i<0)break;
+          fullOut = fullOut.concat(new String(tmp, 0, i));
+        }
+        if(channel.isClosed()){
+          if(in.available()>0) continue; 
+          exitCode = channel.getExitStatus();
+          logger.info("Exit code: " + exitCode);
+          break;
+        }
+        try{Thread.sleep(1000);}catch(Exception ee){}
+      }
+    }
+    catch(IOException e) {
+      throw new JSchException("IOException during ssh action: "+ command, e);
+    }
+    channel.disconnect();
+    if(exitCode != 0) {
+      fullOut = null;
+    }
+    else {
+      fullOut = fullOut.trim();
+    }
+    return fullOut;
+  }
+  
+  public static int fileTo(Session session, String localFile, String remoteFile) throws JSchException {
+    int exitCode = -1;
+    
+    if(remoteIsEqual(session, localFile, remoteFile)) {
+      logger.info("Files are equal, not performing SCP");
+      return 0;
+    }
+    
     logger.info("Sending file to remote [".concat(session.getHost()).concat("]: ").concat(localFile));
     boolean ptimestamp = true;
     // exec 'scp -t rfile' remotely
     String command="scp " + (ptimestamp ? "-p" :"") +" -t "+remoteFile;
+    logger.trace(command);
     
     Channel channel=session.openChannel("exec");
     ((ChannelExec)channel).setCommand(command);
@@ -374,6 +481,18 @@ public class Remote {
       }
     }
     return b;
+  }
+
+  public static void closeSsh(Session ssh) {
+    ssh.disconnect();
+    try {
+      while (ssh.isConnected()) {
+        Thread.sleep(10);
+      }
+    } catch (InterruptedException e) {
+      logger.warn("Issue during closing ssh session... continuing", e);
+    }
+    return;
   }
 }
 

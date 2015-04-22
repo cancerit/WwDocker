@@ -37,11 +37,21 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.nio.file.DirectoryIteratorException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 
 /**
  *
@@ -71,6 +81,15 @@ public class Utils {
       logger.log(type, "\t" + lines[i]);
     }
     return remainder;
+  }
+  
+  public static Map<String, WorkerState> messagesToWorkerState(List<String> messages) {
+    Map<String, WorkerState> workers = new HashMap();
+    for(String m : messages) {
+      WorkerState ws = (WorkerState) Utils.jsonToObject(m, WorkerState.class);
+      workers.put(ws.getResource().getHostName(), ws); // we always want the most recent response so this is safe
+    }
+    return workers;
   }
   
   public static File expandUserDirPath(BaseConfiguration config, String parameter, boolean checkExists) {
@@ -156,5 +175,22 @@ public class Utils {
       throw new RuntimeException(e.getMessage(), e);
     }
     return obj;
+  }
+  
+  public static List<File> getWorkInis(BaseConfiguration config) {
+    List<File> iniFiles = new ArrayList();
+    Path dir = Paths.get(config.getString("wfl_inis"));
+    try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+      for(Path item : stream) {
+        File file = item.toFile();
+        if(file.isFile()) {
+          iniFiles.add(file);
+        }
+        
+      }
+    } catch (IOException | DirectoryIteratorException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    return iniFiles;
   }
 }

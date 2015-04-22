@@ -47,19 +47,21 @@ import org.apache.logging.log4j.Logger;
 public class WorkerResources {
   private static final Logger logger = LogManager.getLogger();
   // Property sysLoadAvg
-  double sysLoadAvg;
+  private double sysLoadAvg;
 
   // Property availableProcessors
-  int availableProcessors;
+  private int availableProcessors = -1;
 
   // Property totalMemBytes
-  long totalMemBytes;
+  private long totalMemBytes;
 
   // Property freeMemBytes
-  long freeMemBytes;
+  private long freeMemBytes;
   
   // Property hostName
-  String hostName;
+  private String hostName;
+  
+  private Long pid;
   
   // Property hostStatus
   Enum hostStatus; // this will be determined based on md5 sums of config and jar file
@@ -69,10 +71,22 @@ public class WorkerResources {
    * @return HostResources
    */
   public WorkerResources() {
+    init();
+  }
+  
+  public void init() {
     OperatingSystemMXBean osmxb = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
+    if(availableProcessors == -1) {
+      base_init(osmxb);
+    }
     sysLoadAvg = osmxb.getSystemLoadAverage();
-    totalMemBytes = osmxb.getTotalPhysicalMemorySize();
     freeMemBytes = osmxb.getFreePhysicalMemorySize();
+  }
+  
+  private void base_init(OperatingSystemMXBean osmxb) {
+    String [] bits = ManagementFactory.getRuntimeMXBean().getName().split("@");
+    pid = Long.getLong(bits[0]);
+    totalMemBytes = osmxb.getTotalPhysicalMemorySize();
     availableProcessors = Runtime.getRuntime().availableProcessors();
     hostName = System.getenv("HOSTNAME");
     if(hostName == null) {
@@ -119,10 +133,19 @@ public class WorkerResources {
   public String getHostName() {
     return this.hostName;
   }
+  
+  /**
+   * @return the pid
+   */
+  public Long getPid() {
+    return pid;
+  }
 
   /**
-  * Simple toString
-  */
+   * Simple toString
+   * @return 
+   */
+  @Override
   public String toString() {
     StringBuilder result = new StringBuilder();
     String NEW_LINE = System.getProperty("line.separator");
@@ -133,6 +156,12 @@ public class WorkerResources {
     result.append(" availableProcessors: " + availableProcessors + NEW_LINE );
     result.append(" sysLoadAvg: " + sysLoadAvg + NEW_LINE);
     result.append(" totalMemBytes: " + totalMemBytes + NEW_LINE);
+    if(pid == null) {
+      result.append(" pid: null" + NEW_LINE);
+    }
+    else {
+      result.append(" pid: " + pid.toString() + NEW_LINE);
+    }
     result.append("}");
 
     return result.toString();

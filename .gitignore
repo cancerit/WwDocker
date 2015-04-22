@@ -16,3 +16,4 @@ hs_err_pid*
 /config/mycreds.cfg
 /src/main/java/uk/ac/sanger/cgp/wwdocker/TestMain.java
 /config/myfull.cfg
+/src/main/java/uk/ac/sanger/cgp/wwdocker/daemon/PrimaryDaemon1.java

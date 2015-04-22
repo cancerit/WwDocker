@@ -31,14 +31,16 @@
 
 package uk.ac.sanger.cgp.wwdocker.daemon;
 
-import com.rabbitmq.client.Channel;
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import uk.ac.sanger.cgp.wwdocker.callable.Docker;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerResources;
@@ -52,51 +54,53 @@ import uk.ac.sanger.cgp.wwdocker.messages.Messaging;
  */
 public class WorkerDaemon implements Daemon {
   private static final Logger logger = LogManager.getLogger();
-  PropertiesConfiguration config;
-  Messaging messaging;
+  private static PropertiesConfiguration config;
+  private static Messaging messaging;
+  private static Docker dockerThread = null;
+  private static ExecutorService executor = null;
+  private static FutureTask<Integer> futureTask = null;
   
   public WorkerDaemon(PropertiesConfiguration config, Messaging rmq) {
-    this.config = config;
-    this.messaging = rmq;
+    WorkerDaemon.config = config;
+    WorkerDaemon.messaging = rmq;
   }
   
-  public void run(Boolean testMode) throws IOException, InterruptedException, ConfigurationException {
+  @Override
+  public void run(String mode) throws IOException, InterruptedException, ConfigurationException {
     WorkerResources hr = new WorkerResources();
     logger.debug(Utils.objectToJson(hr));
     
     File thisConfig = new File("/opt/remote.cfg");
     File thisJar = Utils.thisJarFile();
+    String remoteDatadir = config.getString("datastoreDir");
     
-    Thread dockerThread = null;
-    
-    HostStatus currentState = HostStatus.CLEAN; // if running must be clean or in some processing state
     // build a local WorkerState
     WorkerState thisState = new WorkerState(thisJar, thisConfig);
-    WorkerState requiredState = null;
+    WorkerState requiredState;
+    String hostName = thisState.getResource().getHostName();
     while (true) {
       // are there any messages?
-      List<String> messages = messaging.getMessageStrings("wwd_"+thisState.getResource().getHostName(), 1000);
-      if(messages.size() > 0) {
-        requiredState = (WorkerState) Utils.jsonToObject(messages.get(0), WorkerState.class);
-        thisState = new WorkerState(thisJar, thisConfig); // update the host info
-        currentState = determineState(requiredState, dockerThread, thisState);
-        thisState.setStatus(currentState);
-        messaging.sendMessage("wwd-register", Utils.objectToJson(thisState));
-      }
-      else {
-        // we still want to keep track of the state even if no messages
-        currentState = determineState(requiredState, dockerThread, thisState);
-        thisState.setStatus(currentState);
-      }
+      String message = messaging.getMessageString("wwd_"+hostName, -1);
+      thisState.getResource().init(); // update the resource info
+      requiredState = (WorkerState) Utils.jsonToObject(message, WorkerState.class);
+      determineState(requiredState, thisState);
+      messaging.sendMessage("wwd-active", Utils.objectToJson(thisState));
       
-      
-      Thread.sleep(1000);
+      if(requiredState.getChangeStatusTo() != null && requiredState.getChangeStatusTo().equals(HostStatus.RUNNING) && dockerThread == null) {
+        logger.debug(thisState.toString());
+        String iniFileName = thisState.getWorkflowIni().getName(); 
+        File workIni = new File(remoteDatadir.concat("/").concat(iniFileName));
+        dockerThread = new Docker(iniFileName, workIni);
+        futureTask = new FutureTask<>(dockerThread);
+        executor = Executors.newSingleThreadExecutor();
+        executor.execute(futureTask);
+      }
     }
   }
   
-  private static HostStatus determineState(WorkerState requiredState, Thread dockerThread, WorkerState currentState) {
+  private static void determineState(WorkerState requiredState, WorkerState currentState) {
     
-    /**
+    /*
      * Progression of states as follows
      * CLEAN -> RUNNING
      * RUNNING -> ERROR/DONE
@@ -110,23 +114,74 @@ public class WorkerDaemon implements Daemon {
     HostStatus hs = currentState.getStatus();
     if(hs == null) {
       hs = HostStatus.CLEAN;
+      currentState.setStatus(hs);
     }
-    if(hs == HostStatus.CLEAN && requiredState != null && !requiredState.equals(currentState)) {
-      logger.fatal("State incompatible with next workflow execution, shutting down cleanly.");
+    if(requiredState != null && requiredState.getChangeStatusTo() != null && requiredState.getChangeStatusTo().equals(HostStatus.KILL)) {
+      messaging.substrRemoveFromQueue("wwd_CLEAN", currentState.getResource().getHostName());
+      logger.fatal("FORCED SHUTDOWN...");
       System.exit(0); // I will be re-provisioned as I am not running
     }
-    if(hs == HostStatus.RUNNING) {
-      if(!dockerThread.isAlive()) {
-        // check for errors and state changes
-        hs = HostStatus.DONE; 
-        //hs = HostStatus.ERROR; 
-        throw new RuntimeException("TODO: Need to determine if ended thread is successful or failed");
-      }
-    } else if(hs == HostStatus.DONE || hs == HostStatus.ERROR || hs == HostStatus.RECYCLE) {
-      throw new RuntimeException("TODO: how should this be handled?");
-    }
-    logger.info("HostStatus: " + hs);
     
-    return hs;
+    if(requiredState != null && requiredState.getChangeStatusTo() != null) {
+      hs = requiredState.getChangeStatusTo();
+      currentState.setStatus(hs);
+      if(requiredState.getWorkflowIni() != null) {
+        currentState.setWorkflowIni(requiredState.getWorkflowIni());
+      }
+      return;
+    }
+    
+    if(hs == HostStatus.CLEAN) {
+      if(requiredState != null && !requiredState.equals(currentState)) {
+        messaging.substrRemoveFromQueue("wwd_CLEAN", currentState.getResource().getHostName());
+        logger.fatal("State incompatible with next workflow execution, shutting down cleanly.");
+        System.exit(0); // I will be re-provisioned as I am not running
+      }
+    }
+    else if(hs == HostStatus.DONE || hs == HostStatus.ERROR || hs == HostStatus.RECEIVE) {
+      // lots of sleeping until I'm told to change or shutdown
+      try {
+        Thread.sleep(50); // can't sleep too long as primary will get worried
+      } catch (InterruptedException e) {
+        logger.fatal(e.getMessage(), e);
+        throw new RuntimeException(e.getMessage(), e);
+      }
+    }
+    else if(hs == HostStatus.RUNNING) {
+      if(futureTask != null && futureTask.isDone()) {
+        try {
+          if(futureTask.isDone()) {
+            int dockerExitCode = futureTask.get();
+            
+            if(dockerExitCode == 0) {
+              hs = HostStatus.DONE;
+            }
+            else {
+              hs = HostStatus.ERROR;
+            }
+            currentState.setStatus(hs);
+            
+            //Send to queue for persistance, only on change though
+            String json = Utils.objectToJson(currentState);
+            messaging.removeFromQueue("wwd_RUNNING", json);
+            messaging.sendMessage("wwd_"+hs.name(), json);
+            
+            logger.info("Exit code: "+ futureTask.get());
+            
+            executor.shutdown();
+            
+            dockerThread = null;
+            executor = null;
+            futureTask = null;
+          }
+        } catch (Exception e) {
+          throw new RuntimeException(e.getMessage(), e);
+        }
+      }
+    }  else {
+      throw new RuntimeException("TODO: how should this be handled?\n" + currentState.toString());
+    }
+    currentState.setStatus(hs);
   }
+  
 }

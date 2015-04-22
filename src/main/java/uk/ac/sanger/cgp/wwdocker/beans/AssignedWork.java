@@ -28,19 +28,68 @@
  * interpreted as being identical to a statement that reads 'Copyright (c) 2005,
  * 2006, 2007, 2008, 2009, 2010, 2011, 2012'."
  */
-package uk.ac.sanger.cgp.wwdocker.enums;
+package uk.ac.sanger.cgp.wwdocker.beans;
+
+import java.io.File;
 
 /**
  *
  * @author kr2
  */
-public enum HostStatus {
-  PEND, // used by ini files. a bit messy
-  KILL, // force host to shutdown regardless of status
-  CLEAN, // ready for data to be pushed to staging area
-  RECEIVE, // host is receiveing data fro primary
-  RUNNING, // workflow started
-  ERROR, // workflow has error state
-  DONE, // workflow successful, data ready to be retrieved
-  //RECYCLE, // Awaiting cleanup
+public class AssignedWork {
+  
+  // the iniFile asigned to this host
+  private File iniFile;
+  
+  // the host name
+  private String host;
+  
+  public AssignedWork(String host, File iniFile) {
+    this.iniFile = iniFile;
+    this.host = host;
+  }
+
+  /**
+   * @return the iniFile
+   */
+  public File getIniFile() {
+    return iniFile;
+  }
+
+  /**
+   * @param iniFile the iniFile to set
+   */
+  public void setIniFile(File iniFile) {
+    this.iniFile = iniFile;
+  }
+
+  /**
+   * @return the host
+   */
+  public String getHost() {
+    return host;
+  }
+
+  /**
+   * @param host the host to set
+   */
+  public void setHost(String host) {
+    this.host = host;
+  }
+  
+    /**
+   * Simple toString
+   * @return 
+   */
+  @Override
+  public String toString() {
+    StringBuilder result = new StringBuilder();
+    String NEW_LINE = System.getProperty("line.separator");
+    result.append(this.getClass().getName() + " Object {" + NEW_LINE);
+    result.append(" host: " + host + NEW_LINE);
+    result.append(" iniFile: " + iniFile + NEW_LINE);
+    result.append("}");
+    return result.toString();
+  }
+  
 }

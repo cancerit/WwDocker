@@ -28,19 +28,57 @@
  * interpreted as being identical to a statement that reads 'Copyright (c) 2005,
  * 2006, 2007, 2008, 2009, 2010, 2011, 2012'."
  */
-package uk.ac.sanger.cgp.wwdocker.enums;
+package uk.ac.sanger.cgp.wwdocker.callable;
+
+import com.jcraft.jsch.Session;
+import java.io.File;
+import java.nio.file.Files;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import uk.ac.sanger.cgp.wwdocker.actions.Local;
+import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 
 /**
  *
  * @author kr2
  */
-public enum HostStatus {
-  PEND, // used by ini files. a bit messy
-  KILL, // force host to shutdown regardless of status
-  CLEAN, // ready for data to be pushed to staging area
-  RECEIVE, // host is receiveing data fro primary
-  RUNNING, // workflow started
-  ERROR, // workflow has error state
-  DONE, // workflow successful, data ready to be retrieved
-  //RECYCLE, // Awaiting cleanup
+public class PushWork implements Callable<Integer> {
+  private static final Logger logger = LogManager.getLogger();
+  private Thread t;
+  private String threadName;
+  private BaseConfiguration config;
+  private String host;
+  private List<File> toPush;
+  private Map<String,String> envs;
+  
+   
+  public PushWork(String threadName, BaseConfiguration config, String host, List<File> toPush, Map<String,String> envs) {
+    this.threadName = threadName;
+    this.config = config;
+    this.host = host;
+    this.toPush = toPush;
+    this.envs = envs;
+    System.out.println("Creating " + threadName);
+  }
+
+  public Integer call() {
+    Integer result = new Integer(-1);
+    logger.info("Running " + threadName);
+    
+    Session ssh = Remote.getSession(config, host);
+    Local.pushFileSetToHost(toPush, host, config.getString("datastoreDir"), envs, ssh, null);
+    Remote.closeSsh(ssh);
+    result++;
+    
+    logger.info("Thread " + threadName + " exiting ("+result+").");
+    return result;
+  }
+  
+  public String getHost() {
+    return host;
+  }
 }

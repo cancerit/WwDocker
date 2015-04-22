@@ -35,15 +35,17 @@ import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
-import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import uk.ac.sanger.cgp.wwdocker.enums.IniStatus;
 
 /**
  *
@@ -53,7 +55,7 @@ public class Local {
   private static final Logger logger = LogManager.getLogger();
   
   public static int runDocker(BaseConfiguration config) {
-    /**
+    /*
      * docker run --rm -h master -t
      * -v /cgp/datastore:/datastore
      * -v /cgp/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow
@@ -81,9 +83,9 @@ public class Local {
     return execCommand(command);
   }
   
-  public static void pushFileSetToHost(String[] sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
-    for(String source : sources) {
-      pushToHost(source, destHost, destPath, envs, session, tmpIn);
+  public static void pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
+    for(File source : sources) {
+      pushToHost(source.getAbsolutePath(), destHost, destPath, envs, session, tmpIn);
     }
   }
   

@@ -54,16 +54,16 @@ public class Control {
     
     String daemonType = argv[0];
     String configPath = argv[1];
-    Boolean testMode = false;
+    String mode = null;
     if(argv.length == 3) {
-      testMode = true;
+      mode = argv[2];
     }
     try {
       PropertiesConfiguration config = Config.loadConfig(configPath);
       Messaging rmq = new Messaging(config);
       
       Daemon runme = new DaemonFactory().getDaemon(daemonType, config, rmq);
-      runme.run(testMode);
+      runme.run(mode);
     }
     catch(Exception e) {
       logger.fatal("Unrecoverable error", e);

@@ -28,19 +28,42 @@
  * interpreted as being identical to a statement that reads 'Copyright (c) 2005,
  * 2006, 2007, 2008, 2009, 2010, 2011, 2012'."
  */
-package uk.ac.sanger.cgp.wwdocker.enums;
+package uk.ac.sanger.cgp.wwdocker.callable;
+
+import java.io.File;
+import java.util.concurrent.Callable;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  *
  * @author kr2
  */
-public enum HostStatus {
-  PEND, // used by ini files. a bit messy
-  KILL, // force host to shutdown regardless of status
-  CLEAN, // ready for data to be pushed to staging area
-  RECEIVE, // host is receiveing data fro primary
-  RUNNING, // workflow started
-  ERROR, // workflow has error state
-  DONE, // workflow successful, data ready to be retrieved
-  //RECYCLE, // Awaiting cleanup
+public class Docker implements Callable<Integer> {
+  private static final Logger logger = LogManager.getLogger();
+  private Thread t;
+  private String threadName;
+  private File iniFile;
+   
+  public Docker(String threadName, File iniFile) {
+    this.threadName = threadName;
+    this.iniFile = iniFile;
+    System.out.println("Creating " + threadName);
+  }
+
+  public Integer call() {
+    
+    Integer result = new Integer(-1);
+    logger.info("Running " + threadName);
+    
+    try {
+      Thread.sleep(10000);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    result++;
+    
+    logger.info("Thread " + threadName + " exiting.");
+    return result;
+  }
 }

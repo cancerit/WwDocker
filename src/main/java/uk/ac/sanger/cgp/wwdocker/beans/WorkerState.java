@@ -52,8 +52,15 @@ public class WorkerState {
   // status of worker
   private HostStatus status;
   
+  // request Worker change status to this in next response
+  private HostStatus changeStatusTo;
+  
   // resources of worker
   private WorkerResources resource;
+  
+  private String error;
+  
+  private File workflowIni;
   
   public WorkerState() {
     // null constructor
@@ -121,6 +128,34 @@ public class WorkerState {
   public void setResource(WorkerResources resource) {
     this.resource = resource;
   }
+  
+  /**
+   * @return the changeStatusTo
+   */
+  public HostStatus getChangeStatusTo() {
+    return changeStatusTo;
+  }
+
+  /**
+   * @param changeStatusTo the changeStatusTo to set
+   */
+  public void setChangeStatusTo(HostStatus changeStatusTo) {
+    this.changeStatusTo = changeStatusTo;
+  }
+  
+  /**
+   * @return the error
+   */
+  public String getError() {
+    return error;
+  }
+
+  /**
+   * @param error the error to set
+   */
+  public void setError(String error) {
+    this.error = error;
+  }
 
   public boolean equals(Object obj) {
     if(obj==null) { return false; }
@@ -135,6 +170,25 @@ public class WorkerState {
     return false;
   }
   
+  /**
+   * @return the workflowIni
+   */
+  public File getWorkflowIni() {
+    return workflowIni;
+  }
+
+  /**
+   * @param workflowIni the workflowIni to set
+   */
+  public void setWorkflowIni(File workflowIni) {
+    this.workflowIni = workflowIni;
+  }
+  
+  /**
+   * Simple toString
+   * @return 
+   */
+  @Override
   public String toString() {
     StringBuilder result = new StringBuilder();
     String NEW_LINE = System.getProperty("line.separator");
@@ -143,6 +197,9 @@ public class WorkerState {
     result.append(" md5Jar: " + md5Jar + NEW_LINE);
     result.append(" status: " + status + NEW_LINE);
     result.append(" resource: " + resource + NEW_LINE);
+    result.append(" changeStatusTo: " + changeStatusTo + NEW_LINE);
+    result.append(" error: " + error + NEW_LINE);
+    result.append(" workflowIni: " + workflowIni + NEW_LINE);
     result.append("}");
     return result.toString();
   }

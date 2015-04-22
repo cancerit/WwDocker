@@ -6,7 +6,7 @@
 
   <Appenders>
     <Console name="console-log" target="SYSTEM_OUT">
-      <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss.SSS}] %-5p [%t - %c{2}] - %msg%n"/>
+      <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss.SSS}] %-5p [%t - %c{2}:%L] - %msg%n"/>
     </Console>
 
     <RollingFile name="trace-log" fileName="${log-path}/WwDocker-info.log" filePattern="${log-path}/WwDocker-info-%d{yyyy-MM-dd}.log">

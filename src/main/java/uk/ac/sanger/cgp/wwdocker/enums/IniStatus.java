@@ -28,42 +28,14 @@
  * interpreted as being identical to a statement that reads 'Copyright (c) 2005,
  * 2006, 2007, 2008, 2009, 2010, 2011, 2012'."
  */
-package uk.ac.sanger.cgp.wwdocker.actions;
-
-import java.util.concurrent.Callable;
+package uk.ac.sanger.cgp.wwdocker.enums;
 
 /**
  *
  * @author kr2
  */
-public class Docker implements Callable<String> {
-  private Thread t;
-  private String threadName;
-  private int iterations = 0;
-   
-  public Docker(String name, int iters) {
-    threadName = name;
-    iterations = iters;
-    System.out.println("Creating " + threadName);
-  }
-
-  public String call() {
-    
-    
-    
-    
-    String result = "I did it";
-    System.out.println("Running " + threadName);
-    try {
-      for (int i = 0; i<iterations; i++) {
-        System.out.println("Thread: " + threadName + ", " + i);
-        // Let the thread sleep for a while.
-        Thread.sleep(500);
-      }
-    } catch (InterruptedException e) {
-      System.out.println("Thread " + threadName + " interrupted.");
-    }
-    System.out.println("Thread " + threadName + " exiting.");
-    return result;
-  }
+public enum IniStatus {
+  NEW, // iniFile is in location defined by config
+  RUNNING, // iniFile moved into .../RUNNING/<HOST>/.
+  DONE, // iniFile moved into .../DONE/.
 }

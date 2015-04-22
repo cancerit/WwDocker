@@ -39,7 +39,9 @@ import org.apache.commons.configuration.PropertiesConfiguration;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.AccessControlException;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -51,14 +53,25 @@ import org.apache.logging.log4j.Logger;
 public class Config {
   private static final Logger logger = LogManager.getLogger();
   
+  private static final String[] optionalEnvs = {"http_proxy", "https_proxy"};
+  
   public static PropertiesConfiguration loadConfig(String configPath) {
+    return loadConfig(configPath, ',', true);
+  }
+  
+  public static PropertiesConfiguration loadConfig(String configPath, Character listDelimiter, boolean checkPermissions) {
     PropertiesConfiguration config;
     try {
-      protectedFileCheck(configPath);
+      if(checkPermissions) {
+        protectedFileCheck(configPath);
+      }
       config = new PropertiesConfiguration(configPath);
+      if(listDelimiter != null) {
+        config.setListDelimiter(listDelimiter);
+      }
     }
     catch(Exception e) {
-      throw new RuntimeException("There was a problem reading your config file:\n" + e.toString(), e);
+      throw new RuntimeException("There was a problem reading your config file: " + configPath + "\n" + e.toString(), e);
     }
     return config;
   }
@@ -87,6 +100,17 @@ public class Config {
       throw new RuntimeException(e.toString(), e);
     }
     return config;
+  }
+  
+  public static Map<String, String> getEnvs(BaseConfiguration config) {
+    Map<String,String> envs = new HashMap();
+    for(String env : optionalEnvs) {
+      String value = config.getString(env);
+      if(value != null) {
+        envs.put(env, value);
+      }
+    }
+    return envs;
   }
 }
 

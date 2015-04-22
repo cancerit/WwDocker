@@ -29,15 +29,36 @@
  * 2009, 2010, 2011, 2012'."
  */
 
-package uk.ac.sanger.cgp.wwdocker.interfaces;
+package uk.ac.sanger.cgp.wwdocker.factories;
 
-import java.io.IOException;
-import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration.PropertiesConfiguration;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
+import uk.ac.sanger.cgp.wwdocker.workflow.SangerWorkflow;
 
 /**
  *
  * @author kr2
  */
-public interface Daemon {
-  void run(String mode) throws IOException, InterruptedException, ConfigurationException;
+public class WorkflowFactory {
+  private static final String WORKFLOW_PREFIX = "Workflow_Bundle_";
+  private static final Logger logger = LogManager.getLogger();
+  
+  public Workflow getWorkflow(PropertiesConfiguration config) {
+    String workflowFile = config.getString("workflow");
+    int startPos = workflowFile.lastIndexOf(WORKFLOW_PREFIX) + WORKFLOW_PREFIX.length();
+    logger.trace(workflowFile);
+    int endPos = workflowFile.indexOf("_", startPos);
+    String workflow = workflowFile.substring(startPos, endPos);
+    logger.trace("Got workflow: "+ workflow);
+    
+    switch(workflow) {
+      case "SangerPancancerCgpCnIndelSnvStr":
+        logger.trace("Creating a SangerWorkflow manager");
+        return new SangerWorkflow(config);
+      default:
+        throw new RuntimeException("Workflow filename doesn't decode to a known workflow type:" + workflow);
+    }
+  }
 }

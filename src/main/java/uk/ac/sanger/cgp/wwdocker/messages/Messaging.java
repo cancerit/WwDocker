@@ -37,8 +37,10 @@ import com.rabbitmq.client.QueueingConsumer;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -65,13 +67,147 @@ public class Messaging {
     getRmqConnection(config);
   }
 
+  /**
+   * Sends a message to the specified queue
+   * @param queue
+   * @param message
+   * @throws IOException
+   * @throws InterruptedException 
+   */
   public void sendMessage(String queue, String message) throws IOException, InterruptedException {
     Channel channel = connectionSend.createChannel();
     channel.queueDeclare(queue, false, false, false, null);
     channel.basicPublish("", queue, null, message.getBytes());
+    logger.info(queue + " sent: " + message);
     channel.close();
   }
   
+    public void sendMessages(String queue, List<String> messages) throws IOException, InterruptedException {
+    Channel channel = connectionSend.createChannel();
+    channel.queueDeclare(queue, false, false, false, null);
+    for(String m : messages) {
+      channel.basicPublish("", queue, null, m.getBytes());
+      logger.info(queue + " sent: " + m);
+    }
+    channel.close();
+  }
+  
+  /**
+   * Gets a single message from a queue, ideal for getting an item of work.
+   * @param queue
+   * @param wait
+   * @return A JSON string representing an object, you need to know what type of object the queue will return and handle this outside of here
+   * @throws IOException
+   * @throws InterruptedException 
+   */
+  public String getMessageString(String queue, long wait) throws IOException, InterruptedException {
+    String message = null;
+    Channel channel = connectionRcv.createChannel();
+    channel.queueDeclare(queue, false, false, false, null);
+    QueueingConsumer consumer = new QueueingConsumer(channel);
+    channel.basicConsume(queue, true, consumer);
+    QueueingConsumer.Delivery delivery;
+    if(wait == -1) {
+      delivery = consumer.nextDelivery(); // will block until response
+    }
+    else {
+      delivery = consumer.nextDelivery(wait);
+    }
+    if(delivery != null) {
+      message = new String(delivery.getBody());
+      logger.info(queue + " recieved: " + message);
+    }
+    channel.close();
+    return message;
+  }
+  
+  public WorkerState getHostStatus(String host, String message) throws IOException, InterruptedException {
+    boolean cleanResponse = false;
+    getMessageStrings("wwd-active", 50); // first clean the queue
+    sendMessage("wwd_"+host, message);
+    String response = getMessageString("wwd-active", -1);
+    WorkerState ws = (WorkerState) Utils.jsonToObject(response, WorkerState.class);
+    return ws;
+  }
+  
+  public boolean queryGaveResponse(String queryQueue, String responseQueue, String query, long wait) throws IOException, InterruptedException {
+    boolean response = false;
+    this.sendMessage(queryQueue, query);
+    if(getMessageString(responseQueue, wait) != null) {
+      response = true;
+    }
+    else {
+      // clean up queue we sent the query
+      getMessageStrings(queryQueue, 10);
+    }
+    return response;
+  }
+  
+  public List<String> messagesRequeue(String queue) throws IOException, InterruptedException {
+    List<String> messages = getMessageStrings(queue, 500);
+    sendMessages(queue, messages);
+    return messages;
+  }
+  
+  public boolean messageSubstrPresent(String queue, String substr) throws IOException, InterruptedException {
+    List<String> messages = messagesRequeue(queue);
+    boolean found = false;
+    for(String m : messages) {
+      if(m.contains(substr)) {
+        found = true;
+        break;
+      }
+    }
+    return found;
+  }
+  
+  public void removeFromQueue(String queue, String messageToRemove) throws IOException, InterruptedException {
+    List<String> messages = getMessageStrings(queue, 500);
+    List<String> requeue = new ArrayList();
+    for(String m : messages ) {
+      if(!m.equals(messageToRemove)) {
+        requeue.add(m);
+      }
+    }
+    sendMessages(queue, requeue);
+  }
+  
+  public String substrRemoveFromQueue(String queue, String substr) {
+    try {
+      return substrRemoveFromQueue(queue, substr, 500);
+    }
+    catch (Exception e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+  }
+  
+  public String substrRemoveFromQueue(String queue, String substr, long wait) throws IOException, InterruptedException {
+    String removed = null;
+    List<String> messages = getMessageStrings(queue, wait);
+    List<String> requeue = new ArrayList();
+    for(String m : messages ) {
+      if(m.contains(substr)) {
+        if(removed != null) {
+          sendMessages(queue, messages);
+          throw new RuntimeException("Substring '"+ substr +"' is not unique in the queue '"+queue+"', all messages requeued");
+        }
+        removed = m;
+      } else {
+        requeue.add(m);
+      }
+    }
+    sendMessages(queue, requeue);
+    return removed;
+  }
+  
+  /**
+   * Gets all the messages in a queue, best for queues which receive status updates.
+   * @param queue
+   * @param wait
+   * @return List of JSON strings representing objects, you need to know what type of object the queue will return and handle this outside of here
+   * @throws IOException
+   * @throws InterruptedException 
+   */
   public List<String> getMessageStrings(String queue, long wait) throws IOException, InterruptedException {
     List<String> responses = new ArrayList();
     Channel channel = connectionRcv.createChannel();
@@ -88,9 +224,6 @@ public class Messaging {
       responses.add(message);
     }
     channel.close();
-    if(responses.size() == 0) {
-      logger.info(queue + " no messages");
-    }
     return responses;
   }
 
