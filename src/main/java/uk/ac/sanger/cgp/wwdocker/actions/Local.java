@@ -34,18 +34,25 @@ package uk.ac.sanger.cgp.wwdocker.actions;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.Writer;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import uk.ac.sanger.cgp.wwdocker.enums.IniStatus;
+import org.codehaus.plexus.util.cli.Arg;
+import org.codehaus.plexus.util.cli.CommandLineUtils;
+import org.codehaus.plexus.util.cli.Commandline;
+import org.codehaus.plexus.util.cli.WriterStreamConsumer;
 
 /**
  *
@@ -54,7 +61,20 @@ import uk.ac.sanger.cgp.wwdocker.enums.IniStatus;
 public class Local {
   private static final Logger logger = LogManager.getLogger();
   
-  public static int runDocker(BaseConfiguration config) {
+  private static String baseDockerCommand(BaseConfiguration config) {
+    File workflow = Paths.get(config.getString("workflowDir"), config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", "")).toFile();
+    
+    // probably want to clean the data store before we write the ini file
+    //docker run --rm -h master -v /cgp/datastore:/datastore -v /cgp/workflows/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow -i seqware/seqware_whitestar_pancancer rm -rf /datastore/
+    
+    String command = "docker run --rm -h master";
+    command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
+    command = command.concat(" -v ").concat(workflow.getAbsolutePath()).concat(":/workflow");
+    command = command.concat(" seqware/seqware_whitestar_pancancer");
+    return command;
+  }
+  
+  public static int runDocker(BaseConfiguration config, File iniFile) {
     /*
      * docker run --rm -h master -t
      * -v /cgp/datastore:/datastore
@@ -67,20 +87,18 @@ public class Local {
      * --ini /datastore/testRun.ini
      */
     
-    File workflow = new File(config.getString("workflowDir")
-                              .concat("/")
-                              .concat(config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", ""))
-                            );
-    
-    String command = "docker run --rm -h master -t";
-    command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
-    command = command.concat(" -v ").concat(config.getString("workflow")).concat(":/workflow");
-    command = command.concat(" -i seqware/seqware_whitestar_pancancer");
+    String command = baseDockerCommand(config);
     command = command.concat(" seqware bundle launch --no-metadata --engine whitestar-parallel");
     command = command.concat(" --dir /workflow");
-    command = command.concat(" --ini /datastore/work.ini");
+    command = command.concat(" --ini /datastore/").concat(iniFile.getName());
     // this may need to be more itelligent than just the exit code
-    return execCommand(command);
+    return execCommand(command, false);
+  }
+  
+  public static int cleanDockerPath(BaseConfiguration config) {
+    String command = baseDockerCommand(config);
+    command = command.concat(" /bin/sh -c 'rm -rf /datastore/oozie-*'");
+    return execCommand(command, true);
   }
   
   public static void pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
@@ -120,37 +138,54 @@ public class Local {
     return exitCode;
   }
   
-  public static void chmod(File f, String perms) {
+  public static int chmod(File f, String perms) {
     String command = "chmod ".concat(perms).concat(" ").concat(f.getAbsolutePath());
-    execCommand(command);
+    return execCommand(command);
   }
   
-  private static int execCommand(String command) {
+  public static int execCommand(String command) {
     Map<String,String> noEnv = new HashMap();
-    return execCommand(command, noEnv);
+    return execCommand(command, noEnv, false);
   }
   
+  public static int execCommand(String command, Map noEnv) {
+    return execCommand(command, noEnv, false);
+  }
   
-  private static int execCommand(String command, Map envs) {
-    ProcessBuilder pb = new ProcessBuilder(command.split(" "));
+  public static int execCommand(String command, boolean shellCmd) {
+    Map<String,String> noEnv = new HashMap();
+    return execCommand(command, noEnv, shellCmd);
+  }
+  
+  private static int execCommand(String command, Map envs, boolean shellCmd) {
+    ProcessBuilder pb;
+    if(shellCmd) {
+      pb = new ProcessBuilder("/bin/sh", "-c", command);
+    }
+    else {
+      pb = new ProcessBuilder(command.split(" "));
+    }
     Map<String, String> pEnv = pb.environment();
     pEnv.putAll(envs);
     logger.info("Executing: " + command);
-    int exitCode;
+    int exitCode = -1;
+    Process p = null;
     try {
-      Process p = pb.start();
+      p = pb.start();
       exitCode = p.waitFor();
       if(exitCode != 0) {
         String progErr = IOUtils.toString(p.getErrorStream());
         Utils.logOutput(progErr, Level.ERROR);
-        throw new RuntimeException("An error occurred executing: "
-                                  + command + "\n\t" + progErr);
       }
       Utils.logOutput(IOUtils.toString(p.getInputStream()), Level.TRACE);
-    } catch(InterruptedException e) {
-      throw new RuntimeException("Execution of command interrupted: " + command, e);
-    } catch(IOException e) {
-      throw new RuntimeException("IOException during execution of command: " + command, e);
+    } catch(InterruptedException | IOException e) {
+      logger.error(e.getMessage(), e);
+    }
+    finally {
+      if(p != null) {
+        p.destroy();
+        exitCode = p.exitValue();
+      }
     }
     return exitCode;
   }

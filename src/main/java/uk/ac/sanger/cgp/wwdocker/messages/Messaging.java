@@ -30,6 +30,8 @@
  */
 package uk.ac.sanger.cgp.wwdocker.messages;
 
+import com.rabbitmq.client.AMQP;
+import com.rabbitmq.client.AMQP.BasicProperties;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -37,10 +39,8 @@ import com.rabbitmq.client.QueueingConsumer;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -56,8 +56,8 @@ public class Messaging {
   private static final Logger logger = LogManager.getLogger();
 
   BaseConfiguration config;
-  Connection connectionSend;
-  Connection connectionRcv;
+  private Connection connectionSend;
+  private Connection connectionRcv;
 
   Map<String, Channel> channels = new HashMap();
   Map<String, QueueingConsumer> consumers = new HashMap();
@@ -65,6 +65,14 @@ public class Messaging {
   public Messaging(BaseConfiguration config) {
     this.config = config;
     getRmqConnection(config);
+  }
+  
+  public Connection getSendConn() {
+    return connectionSend;
+  }
+  
+  public Connection getRcvConn() {
+    return connectionRcv;
   }
 
   /**
@@ -74,22 +82,57 @@ public class Messaging {
    * @throws IOException
    * @throws InterruptedException 
    */
-  public void sendMessage(String queue, String message) throws IOException, InterruptedException {
+  public void sendMessage(String queue, Object in) throws IOException, InterruptedException {
+    String message;
+    BasicProperties mProp = null;
+    if(in.getClass().equals(String.class)) {
+      message = (String) in;
+    } else {
+      message = Utils.objectToJson(in);
+      if(in.getClass().equals(WorkerState.class)) {
+        Map<String, Object> headers =  new HashMap();
+        headers.put("host", ((WorkerState) in).getResource().getHostName());
+        mProp = new BasicProperties.Builder().headers(headers).build();
+      }
+    }
+    
     Channel channel = connectionSend.createChannel();
     channel.queueDeclare(queue, false, false, false, null);
-    channel.basicPublish("", queue, null, message.getBytes());
+    channel.basicPublish("", queue, mProp, message.getBytes());
     logger.info(queue + " sent: " + message);
     channel.close();
   }
   
-    public void sendMessages(String queue, List<String> messages) throws IOException, InterruptedException {
-    Channel channel = connectionSend.createChannel();
+  public WorkerState getWorkerState(String queue, long wait) throws IOException, InterruptedException {
+    WorkerState ws = null;
+    Channel channel = connectionRcv.createChannel();
     channel.queueDeclare(queue, false, false, false, null);
-    for(String m : messages) {
-      channel.basicPublish("", queue, null, m.getBytes());
-      logger.info(queue + " sent: " + m);
+
+    QueueingConsumer consumer = new QueueingConsumer(channel);
+    channel.basicConsume(queue, false, consumer);
+    QueueingConsumer.Delivery delivery;
+    if(wait == -1) {
+      delivery = consumer.nextDelivery(); // will block until response
+    }
+    else {
+      delivery = consumer.nextDelivery(wait);
+    }
+    if(delivery != null) {
+      String message = new String(delivery.getBody());
+      ws = (WorkerState) Utils.jsonToObject(message, WorkerState.class);
+      channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
     }
     channel.close();
+    return ws;
+  }
+  
+  public Object getMessageObject(String queue, Class objClass, long wait) throws IOException, InterruptedException {
+    String message = getMessageString(queue, wait);
+    Object result = null;
+    if(message != null) {
+      result = Utils.jsonToObject(message, objClass);
+    }
+    return result;
   }
   
   /**
@@ -104,8 +147,9 @@ public class Messaging {
     String message = null;
     Channel channel = connectionRcv.createChannel();
     channel.queueDeclare(queue, false, false, false, null);
+
     QueueingConsumer consumer = new QueueingConsumer(channel);
-    channel.basicConsume(queue, true, consumer);
+    channel.basicConsume(queue, false, consumer);
     QueueingConsumer.Delivery delivery;
     if(wait == -1) {
       delivery = consumer.nextDelivery(); // will block until response
@@ -115,19 +159,11 @@ public class Messaging {
     }
     if(delivery != null) {
       message = new String(delivery.getBody());
+      channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
       logger.info(queue + " recieved: " + message);
     }
     channel.close();
     return message;
-  }
-  
-  public WorkerState getHostStatus(String host, String message) throws IOException, InterruptedException {
-    boolean cleanResponse = false;
-    getMessageStrings("wwd-active", 50); // first clean the queue
-    sendMessage("wwd_"+host, message);
-    String response = getMessageString("wwd-active", -1);
-    WorkerState ws = (WorkerState) Utils.jsonToObject(response, WorkerState.class);
-    return ws;
   }
   
   public boolean queryGaveResponse(String queryQueue, String responseQueue, String query, long wait) throws IOException, InterruptedException {
@@ -143,61 +179,23 @@ public class Messaging {
     return response;
   }
   
-  public List<String> messagesRequeue(String queue) throws IOException, InterruptedException {
-    List<String> messages = getMessageStrings(queue, 500);
-    sendMessages(queue, messages);
-    return messages;
-  }
-  
-  public boolean messageSubstrPresent(String queue, String substr) throws IOException, InterruptedException {
-    List<String> messages = messagesRequeue(queue);
-    boolean found = false;
-    for(String m : messages) {
-      if(m.contains(substr)) {
-        found = true;
-        break;
+  public void removeFromStateQueue(String queue, String hostToRemove) throws IOException, InterruptedException {
+    Channel channel = connectionRcv.createChannel();
+    channel.queueDeclare(queue, false, false, false, null);
+
+    QueueingConsumer consumer = new QueueingConsumer(channel);
+    channel.basicConsume(queue, false, consumer);
+    QueueingConsumer.Delivery delivery = consumer.nextDelivery(50);
+    if(delivery != null) {
+      // the toString in the middle of this is needed as it is wrapped with another type that can hold 4GB
+      if(delivery.getProperties().getHeaders().get("host").toString().equals(hostToRemove)) {
+        channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+      }
+      else {
+        channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
       }
     }
-    return found;
-  }
-  
-  public void removeFromQueue(String queue, String messageToRemove) throws IOException, InterruptedException {
-    List<String> messages = getMessageStrings(queue, 500);
-    List<String> requeue = new ArrayList();
-    for(String m : messages ) {
-      if(!m.equals(messageToRemove)) {
-        requeue.add(m);
-      }
-    }
-    sendMessages(queue, requeue);
-  }
-  
-  public String substrRemoveFromQueue(String queue, String substr) {
-    try {
-      return substrRemoveFromQueue(queue, substr, 500);
-    }
-    catch (Exception e) {
-      throw new RuntimeException(e.getMessage(), e);
-    }
-  }
-  
-  public String substrRemoveFromQueue(String queue, String substr, long wait) throws IOException, InterruptedException {
-    String removed = null;
-    List<String> messages = getMessageStrings(queue, wait);
-    List<String> requeue = new ArrayList();
-    for(String m : messages ) {
-      if(m.contains(substr)) {
-        if(removed != null) {
-          sendMessages(queue, messages);
-          throw new RuntimeException("Substring '"+ substr +"' is not unique in the queue '"+queue+"', all messages requeued");
-        }
-        removed = m;
-      } else {
-        requeue.add(m);
-      }
-    }
-    sendMessages(queue, requeue);
-    return removed;
+    channel.close();
   }
   
   /**
@@ -242,16 +240,19 @@ public class Messaging {
     }
   }
   
+  @Override
   public String toString() {
     StringBuilder result = new StringBuilder();
     String NEW_LINE = System.getProperty("line.separator");
-    result.append(this.getClass().getName() + " Object {" + NEW_LINE);
-    result.append(" channels: " + channels + NEW_LINE);
-    result.append(" consumers: " + consumers + NEW_LINE);
-    result.append(" config: " + config + NEW_LINE);
-    result.append(" connectionSend: " + connectionSend + NEW_LINE);
-    result.append(" connectionRcv: " + connectionRcv + NEW_LINE);
+    result.append(this.getClass().getName()).append(" Object {").append(NEW_LINE);
+    result.append(" channels: ").append(channels).append(NEW_LINE);
+    result.append(" consumers: ").append(consumers).append(NEW_LINE);
+    result.append(" config: ").append(config).append(NEW_LINE);
+    result.append(" connectionSend: ").append(connectionSend).append(NEW_LINE);
+    result.append(" connectionRcv: ").append(connectionRcv).append(NEW_LINE);
     result.append("}");
     return result.toString();
   }
+  
+  
 }

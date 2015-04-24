@@ -35,8 +35,9 @@ import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,6 +55,7 @@ import uk.ac.sanger.cgp.wwdocker.actions.Local;
 import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
+import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
 import uk.ac.sanger.cgp.wwdocker.callable.PullWork;
 import uk.ac.sanger.cgp.wwdocker.callable.PushWork;
 import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
@@ -88,31 +90,6 @@ public class PrimaryDaemon implements Daemon {
     PrimaryDaemon.messaging = rmq;
   }
   
-  private void killAll(Set<String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException {
-    WorkerState killState = new WorkerState(thisJar, thisConf); // intentionally broken object which will cause all clients to shutdown
-    killState.setChangeStatusTo(HostStatus.KILL);
-    String killJson = Utils.objectToJson(killState);
-    for(String host : hosts) {
-      messaging.sendMessage("wwd_"+host, killJson);
-    }
-    Thread.sleep(5000);
-    // cleanup
-    for(String host : hosts) {
-      messaging.getMessageStrings("wwd_"+host, 50);
-    }
-    logger.fatal("All hosts shutting down as requested... exiting");
-    System.exit(0);
-  }
-  
-  private void cleanQueues(Set<String> hostQueues) throws IOException, InterruptedException {
-    for(String q : queuesToClean) {
-       messaging.getMessageStrings(q, 50);
-    }
-    for(String q : hostQueues) {
-      messaging.getMessageStrings("wwd_"+q, 50);
-    }
-  }
-  
   @Override
   public void run(String mode) throws IOException, InterruptedException, ConfigurationException {
     // lots of values that will be used over and over again
@@ -132,9 +109,7 @@ public class PrimaryDaemon implements Daemon {
      * matters when we loop round so we may as well just rebuild the object
      */ 
     Set<String> hosts = hostSet(config);
-    
-    // clear all of the legacy messages
-    cleanQueues(hosts);
+    cleanHostQueues(hosts);
     
     if(mode != null && mode.equalsIgnoreCase("KILLALL")) {
       killAll(hosts, thisJar, tmpConf);
@@ -143,146 +118,32 @@ public class PrimaryDaemon implements Daemon {
     // this holds md5 of this JAR and the config (which lists the workflow code to use)
     WorkerState provState = new WorkerState(thisJar, tmpConf);
     
-    Set<String> blackList = new HashSet<>();
-    
-    int counter = 0;
     while(true) {
-      counter++;
-      
-      checkPush();
       addWorkToPend(workManager, config);
       
       // this is a reload as this can change during execution
       hosts = hostSet(config);
-      cleanBlackList(blackList, hosts);
       
       for(String host:hosts) {
-        if(blackList.contains(host)) {
-          continue;
-        }
-        if(messaging.queryGaveResponse("wwd_"+host, "wwd-active", Utils.objectToJson(provState), 2000)) {
-          // if we get to here host must be active
-          // 1. get state
-          WorkerState workerState = messaging.getHostStatus(host, Utils.objectToJson(provState));
-          // update queues with state
-          recordWorkerState(workerState);
-          if(workerState.getStatus().equals(HostStatus.CLEAN)) {
-            logger.info("try to use clean host");
-            startPush(workManager, workerState, envs);
-          }
-        } else {
-          // cleanup the unused request
-          messaging.getMessageStrings("wwd_"+host, 100);
+        provState.setChangeStatusTo(HostStatus.CHECKIN);
+        provState.setReplyToQueue("wwd-active");
+        if(!messaging.queryGaveResponse("wwd_"+host, provState.getReplyToQueue(), Utils.objectToJson(provState), 3000)) {
           logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
           provisionHost(host, config, thisJar, tmpConf, mode, envs);
-          if(!messaging.queryGaveResponse("wwd_"+host, "wwd-active", Utils.objectToJson(provState), 10000)) {
-            logger.info(host +"non-responsive, blacklisting");
-            blackList.add(host);
-          }
           break; // so we start some work on this host before provisioning more
         }
       }
-    }
-  }
-  
-  private void cleanBlackList(Set<String> blackList, Set<String> hosts) {
-    if(blackList.isEmpty()) {
-      return;
-    }
-    for (Iterator<String> i = blackList.iterator(); i.hasNext();) {
-      String badHost = i.next();
-      if(!hosts.contains(badHost)) {
-        i.remove();
-      }
+      // we need a little sleep here or we'll kill the queues
+      Thread.sleep(10000);
     }
   }
   
   private Set<String> hostSet(BaseConfiguration config) {
     BaseConfiguration workerConf = Config.loadWorkers(config.getString("workerCfg"));
     String[] rawHosts = workerConf.getStringArray("hosts");
-    Set<String> hosts = new HashSet<>();
+    Set<String> hosts = new LinkedHashSet<>(); // ordered
     hosts.addAll(Arrays.asList(rawHosts));
     return hosts;
-  }
-  
-  private void checkPush() throws IOException, InterruptedException {
-    if(pushTask == null) {
-      logger.trace("checkPush: nothing");
-      return;
-    }
-    logger.trace("checkPush: something");
-    if(pushTask.isDone()) {
-      logger.trace("checkPush: done");
-      String sentTo = pushThread.getHost();
-      int pushExitCode;
-      try {
-        pushExitCode = pushTask.get();
-      } catch(ExecutionException e) {
-        pushExitCode = 1;
-        pushToWorker.setError(e.getMessage());
-      }
-      if(pushExitCode == 0) {
-        pushToWorker.setChangeStatusTo(HostStatus.RUNNING);
-        messaging.sendMessage("wwd_"+sentTo, Utils.objectToJson(pushToWorker));
-      } else {
-        pushToWorker.setChangeStatusTo(HostStatus.ERROR);
-        messaging.sendMessage("wwd_"+sentTo, Utils.objectToJson(pushToWorker));
-      }
-      pushTask = null;
-      pushThread = null;
-      pushToWorker = null;
-    } else {
-      logger.trace("checkPush: NOT done");
-    }
-  }
-  
-  private void startPush(Workflow workManager, WorkerState wsIn, Map<String,String> envs) throws IOException, InterruptedException {
-      if(pushTask != null) {
-        return;
-      }
-
-      pushToWorker = wsIn;
-      String host = pushToWorker.getResource().getHostName();
-
-      logger.debug("Should be starting to look for data");
-
-      // okay get some work if it exists
-      String message = messaging.getMessageString("wwd_PEND", 50);
-      if(message == null) {
-        return;
-      }
-      File iniFile = (File) Utils.jsonToObject(message, File.class); // this is the original path before loading
-      String iniFileName = workManager.iniPathByState(config, iniFile.getAbsolutePath(), HostStatus.PEND);
-      iniFile = new File(iniFileName);
-
-      logger.debug("FOUND:" + iniFile.getAbsolutePath());
-
-
-      // tell worker to change state
-      pushToWorker.setChangeStatusTo(HostStatus.RECEIVE);
-      pushToWorker.setWorkflowIni(iniFile);
-      messaging.sendMessage("wwd_"+host, Utils.objectToJson(pushToWorker));
-
-      pushThread = new PushWork(iniFile.getName(), config, host, workManager.filesToPush(iniFile), envs);
-      pushTask = new FutureTask<Integer>(pushThread);
-      pushExecutor.execute(pushTask);
-  }
-  
-  private void recordWorkerState(WorkerState workerState) throws IOException, InterruptedException {
-    // first check it's not in the correct queue already
-    String intendedQueue = "wwd_" + workerState.getStatus().name();
-    String host = workerState.getResource().getHostName();
-    if(!messaging.messageSubstrPresent(intendedQueue, host)) {
-      // remove from any of the core queues, then add to the relevant queue
-      for(String q : queuesToClean) {
-        if(q.equals(intendedQueue)) {
-          // we've already checked it's not here
-          continue;
-        }
-        messaging.substrRemoveFromQueue(q, host);
-      }
-      messaging.sendMessage(intendedQueue, Utils.objectToJson(workerState));
-    }
   }
   
   private void addWorkToPend(Workflow workManager, BaseConfiguration config) throws IOException, InterruptedException {
@@ -292,29 +153,23 @@ public class PrimaryDaemon implements Daemon {
       return;
     }
     
-    for(File f: iniFiles) {
-       messaging.sendMessage("wwd_PEND", Utils.objectToJson(f));
+    // get all of the existing iniFiles so we can generate a uniq list
+    List<String> existing = messaging.getMessageStrings("wwd_PEND", -1);
+    Map<String, WorkflowIni> allInis= new HashMap();
+    for (String m : existing) {
+      WorkflowIni iniFile = (WorkflowIni) Utils.jsonToObject(m, WorkflowIni.class);
+      allInis.put(iniFile.getIniFile().getAbsolutePath(), iniFile);
     }
-    
-    
-    
-//    // get all of the existing iniFiles so we can generate a uniq list
-//    List<String> existing = messaging.getMessageStrings("wwd_PEND", 500);
-//    Map<String, File> allInis= new HashMap();
-//    for(String m : existing) {
-//      File iniFile = (File) Utils.jsonToObject(m, File.class);
-//      allInis.put(iniFile.getAbsolutePath(), iniFile);
-//    }
-//    for(File iniFile : iniFiles) {
-//      if(!allInis.containsKey(iniFile.getAbsolutePath())) {
-//        allInis.put(iniFile.getAbsolutePath(), iniFile);
-//      }
-//    }
-//
-//    Iterator itr = allInis.values().iterator();
-//    while(itr.hasNext()) {
-//      messaging.sendMessage("wwd_PEND", Utils.objectToJson((File)itr.next()));
-//    }
+    for(File iniFile : iniFiles) {
+      if(!allInis.containsKey(iniFile.getAbsolutePath())) {
+        allInis.put(iniFile.getAbsolutePath(), new WorkflowIni(iniFile));
+      }
+    }
+
+    Iterator itr = allInis.values().iterator();
+    while(itr.hasNext()) {
+      messaging.sendMessage("wwd_PEND", (WorkflowIni)itr.next());
+    }
     
     workManager.iniUpdate(iniFiles, config, HostStatus.PEND);
   }
@@ -362,8 +217,95 @@ public class PrimaryDaemon implements Daemon {
     // config file
     Local.pushToHost(tmpConf.getAbsolutePath(), host, optDir, envs, ssh, localTmp);
     Remote.chmodPath(ssh, "go-wrx", optDir.concat("/*"), true); // file will have passwords
+    
+    Local.pushFileSetToHost(Utils.getGnosKeys(config), host, remoteWorkflowDir, envs, ssh, localTmp);
 
     Remote.startWorkerDaemon(ssh, thisJar.getName(), mode);
   }
   
+  private void killAll(Set<String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException {
+    WorkerState killState = new WorkerState(thisJar, thisConf); // intentionally broken object which will cause all clients to shutdown
+    killState.setChangeStatusTo(HostStatus.KILL);
+    String killJson = Utils.objectToJson(killState);
+    for(String host : hosts) {
+      messaging.sendMessage("wwd_"+host, killJson);
+    }
+    logger.fatal("All hosts shutting down as requested... exiting");
+    System.exit(0);
+  }
+  
+  private void cleanHostQueues(Set<String> hosts) throws IOException, InterruptedException {
+    for(String host : hosts) {
+      messaging.getMessageStrings("wwd_"+host, 50);
+    }
+  }
+  
+//  private void startPush(Workflow workManager, WorkerState wsIn, Map<String,String> envs) throws IOException, InterruptedException {
+//    if(pushTask != null) {
+//      return;
+//    }
+//
+//    pushToWorker = wsIn;
+//    String host = pushToWorker.getResource().getHostName();
+//
+//    logger.debug("Should be starting to look for data");
+//
+//    // okay get some work if it exists
+//    String message = messaging.getMessageString("wwd_PEND", 50);
+//
+//    if(message == null) {
+//      return;
+//    }
+//
+//
+//
+//    File iniFile = (File) Utils.jsonToObject(message, File.class); // this is the original path before loading
+//    String iniFileName = workManager.iniPathByState(config, iniFile.getAbsolutePath(), HostStatus.PEND);
+//    iniFile = new File(iniFileName);
+//
+//    logger.debug("FOUND:" + iniFile.getAbsolutePath());
+//
+//
+//    // tell worker to change state
+//    pushToWorker.setChangeStatusTo(HostStatus.RECEIVE);
+//    pushToWorker.setWorkflowIni(iniFile);
+//    messaging.sendMessage("wwd_"+host, Utils.objectToJson(pushToWorker));
+//    messaging.getMessageString("wwd-active", -1); // clean the response
+//
+//    pushThread = new PushWork(iniFile.getName(), config, host, workManager.filesToPush(iniFile), envs);
+//    pushTask = new FutureTask<Integer>(pushThread);
+//    pushExecutor.execute(pushTask);
+//  }
+//
+//  private void checkPush() throws IOException, InterruptedException {
+//    if(pushTask == null) {
+//      logger.trace("checkPush: nothing");
+//      return;
+//    }
+//    logger.trace("checkPush: something");
+//    if(pushTask.isDone()) {
+//      logger.trace("checkPush: done");
+//      String sentTo = pushThread.getHost();
+//      int pushExitCode;
+//      try {
+//        pushExitCode = pushTask.get();
+//      } catch(ExecutionException e) {
+//        pushExitCode = 1;
+//        pushToWorker.setError(e.getMessage());
+//      }
+//      if(pushExitCode == 0) {
+//        pushToWorker.setChangeStatusTo(HostStatus.RUNNING);
+//        messaging.sendMessage("wwd_"+sentTo, Utils.objectToJson(pushToWorker));
+//      } else {
+//        pushToWorker.setChangeStatusTo(HostStatus.ERROR);
+//        messaging.sendMessage("wwd_"+sentTo, Utils.objectToJson(pushToWorker));
+//      }
+//      messaging.getMessageString("wwd-active", -1); // clean the response
+//      pushTask = null;
+//      pushThread = null;
+//      pushToWorker = null;
+//    } else {
+//      logger.trace("checkPush: NOT done");
+//    }
+//  }
 }

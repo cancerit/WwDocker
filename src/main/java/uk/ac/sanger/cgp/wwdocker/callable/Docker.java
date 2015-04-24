@@ -31,9 +31,15 @@
 package uk.ac.sanger.cgp.wwdocker.callable;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.concurrent.Callable;
+import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.io.FileUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import uk.ac.sanger.cgp.wwdocker.actions.Local;
+import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
 
 /**
  *
@@ -43,25 +49,30 @@ public class Docker implements Callable<Integer> {
   private static final Logger logger = LogManager.getLogger();
   private Thread t;
   private String threadName;
-  private File iniFile;
+  private WorkflowIni iniFile;
+  private File remoteIni;
+  private BaseConfiguration config;
    
-  public Docker(String threadName, File iniFile) {
-    this.threadName = threadName;
+  public Docker(WorkflowIni iniFile, BaseConfiguration config) {
+    this.config = config;
+    this.threadName = iniFile.getIniFile().getName();
     this.iniFile = iniFile;
-    System.out.println("Creating " + threadName);
+    remoteIni = Paths.get(config.getString("datastoreDir"), threadName).toFile();
   }
 
   public Integer call() {
-    
     Integer result = new Integer(-1);
     logger.info("Running " + threadName);
     
     try {
-      Thread.sleep(10000);
-    } catch (InterruptedException e) {
+      FileUtils.writeStringToFile(remoteIni, iniFile.getIniContent(), null);
+      
+      result = Local.runDocker(config, remoteIni);
+      
+      remoteIni.delete();
+    } catch (IOException e) {
       throw new RuntimeException(e.getMessage(), e);
     }
-    result++;
     
     logger.info("Thread " + threadName + " exiting.");
     return result;

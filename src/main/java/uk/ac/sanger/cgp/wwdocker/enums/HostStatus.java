@@ -38,9 +38,10 @@ public enum HostStatus {
   PEND, // used by ini files. a bit messy
   KILL, // force host to shutdown regardless of status
   CLEAN, // ready for data to be pushed to staging area
-  RECEIVE, // host is receiveing data fro primary
+  RECEIVE, // host is receiveing data from primary
   RUNNING, // workflow started
   ERROR, // workflow has error state
   DONE, // workflow successful, data ready to be retrieved
+  CHECKIN, // confirm still running
   //RECYCLE, // Awaiting cleanup
 }

@@ -60,7 +60,9 @@ public class WorkerState {
   
   private String error;
   
-  private File workflowIni;
+  private WorkflowIni workflowIni;
+  
+  private String replyToQueue;
   
   public WorkerState() {
     // null constructor
@@ -156,6 +158,34 @@ public class WorkerState {
   public void setError(String error) {
     this.error = error;
   }
+  
+  /**
+   * @return the workflowIni
+   */
+  public WorkflowIni getWorkflowIni() {
+    return workflowIni;
+  }
+
+  /**
+   * @param workflowIni the workflowIni to set
+   */
+  public void setWorkflowIni(WorkflowIni workflowIni) {
+    this.workflowIni = workflowIni;
+  }
+  
+  /**
+   * @return the replyToQueue
+   */
+  public String getReplyToQueue() {
+    return replyToQueue;
+  }
+
+  /**
+   * @param replyToQueue the replyToQueue to set
+   */
+  public void setReplyToQueue(String replyToQueue) {
+    this.replyToQueue = replyToQueue;
+  }
 
   public boolean equals(Object obj) {
     if(obj==null) { return false; }
@@ -168,20 +198,6 @@ public class WorkerState {
       return true;
     }
     return false;
-  }
-  
-  /**
-   * @return the workflowIni
-   */
-  public File getWorkflowIni() {
-    return workflowIni;
-  }
-
-  /**
-   * @param workflowIni the workflowIni to set
-   */
-  public void setWorkflowIni(File workflowIni) {
-    this.workflowIni = workflowIni;
   }
   
   /**
@@ -200,8 +216,11 @@ public class WorkerState {
     result.append(" changeStatusTo: " + changeStatusTo + NEW_LINE);
     result.append(" error: " + error + NEW_LINE);
     result.append(" workflowIni: " + workflowIni + NEW_LINE);
+    result.append(" replyToQueue: " + replyToQueue + NEW_LINE);
     result.append("}");
     return result.toString();
   }
+
+
   
 }

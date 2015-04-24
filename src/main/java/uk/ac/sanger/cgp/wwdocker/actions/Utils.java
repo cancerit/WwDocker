@@ -177,6 +177,23 @@ public class Utils {
     return obj;
   }
   
+  public static List<File> getGnosKeys(BaseConfiguration config) {
+    List<File> gnosKeys = new ArrayList();
+    Path dir = Paths.get(config.getString("gnosKeys"));
+    try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+      for(Path item : stream) {
+        File file = item.toFile();
+        if(file.isFile()) {
+          gnosKeys.add(file);
+        }
+        
+      }
+    } catch (IOException | DirectoryIteratorException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    return gnosKeys;
+  }
+  
   public static List<File> getWorkInis(BaseConfiguration config) {
     List<File> iniFiles = new ArrayList();
     Path dir = Paths.get(config.getString("wfl_inis"));

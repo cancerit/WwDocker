@@ -28,14 +28,69 @@
  * interpreted as being identical to a statement that reads 'Copyright (c) 2005,
  * 2006, 2007, 2008, 2009, 2010, 2011, 2012'."
  */
-package uk.ac.sanger.cgp.wwdocker.enums;
+package uk.ac.sanger.cgp.wwdocker.beans;
+
+import java.io.File;
+import java.io.IOException;
+import org.apache.commons.io.FileUtils;
 
 /**
  *
  * @author kr2
  */
-public enum IniStatus {
-  NEW, // iniFile is in location defined by config
-  RUNNING, // iniFile moved into .../RUNNING/<HOST>/.
-  DONE, // iniFile moved into .../DONE/.
+public class WorkflowIni {
+  private File iniFile;
+  private String iniContent;
+  
+  public WorkflowIni() {
+    // required for jsonToObject
+  }
+  
+  public WorkflowIni(File iniFile) throws IOException {
+    this.iniFile = iniFile;
+    iniContent = FileUtils.readFileToString(iniFile, null);
+  }
+
+  /**
+   * @return the iniFile
+   */
+  public File getIniFile() {
+    return iniFile;
+  }
+
+  /**
+   * @param iniFile the iniFile to set
+   */
+  public void setIniFile(File iniFile) {
+    this.iniFile = iniFile;
+  }
+
+  /**
+   * @return the iniContent
+   */
+  public String getIniContent() {
+    return iniContent;
+  }
+
+  /**
+   * @param iniContent the iniContent to set
+   */
+  public void setIniContent(String iniContent) {
+    this.iniContent = iniContent;
+  }
+  
+  @Override
+  public String toString() {
+    StringBuilder result = new StringBuilder();
+    String NEW_LINE = System.getProperty("line.separator");
+    result.append(this.getClass().getName()).append(" Object {").append(NEW_LINE);
+    result.append(" iniFile: ").append(iniFile).append(NEW_LINE);
+    int maxPrint = iniContent.length();
+    if(maxPrint > 500) {
+      maxPrint = 500;
+    }
+    result.append(" iniContent: ").append(iniContent.substring(0,maxPrint)).append("...[truncated@500]").append(NEW_LINE);
+    result.append("}");
+    return result.toString();
+  }
 }
