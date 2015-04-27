@@ -49,11 +49,17 @@ public class SangerWorkflow implements Workflow {
   private static final Logger logger = LogManager.getLogger();
   PropertiesConfiguration config;
   
+  private static final String logSearchCmd = "find seqware-results/ -type f | grep -F '/logs/'";
+  
   public SangerWorkflow(PropertiesConfiguration config) {
     this.config = config;
   }
   
-  public  List filesToPush(File iniFile) {
+  public String getFindLogsCmd() {
+    return logSearchCmd;
+  }
+  
+  public List filesToPush(File iniFile) {
     List files = new ArrayList();
     files.add(iniFile);
     logger.trace(iniFile);

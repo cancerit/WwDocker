@@ -41,6 +41,7 @@ import org.apache.commons.io.FileUtils;
 public class WorkflowIni {
   private File iniFile;
   private String iniContent;
+  private String logSearchCmd;
   
   public WorkflowIni() {
     // required for jsonToObject
@@ -79,12 +80,27 @@ public class WorkflowIni {
     this.iniContent = iniContent;
   }
   
+  /**
+   * @return the logSearchCmd
+   */
+  public String getLogSearchCmd() {
+    return logSearchCmd;
+  }
+
+  /**
+   * @param logSearchCmd the logSearchCmd to set
+   */
+  public void setLogSearchCmd(String logSearchCmd) {
+    this.logSearchCmd = logSearchCmd;
+  }
+  
   @Override
   public String toString() {
     StringBuilder result = new StringBuilder();
     String NEW_LINE = System.getProperty("line.separator");
     result.append(this.getClass().getName()).append(" Object {").append(NEW_LINE);
     result.append(" iniFile: ").append(iniFile).append(NEW_LINE);
+    result.append(" logSearchCmd: ").append(logSearchCmd).append(NEW_LINE);
     int maxPrint = iniContent.length();
     if(maxPrint > 500) {
       maxPrint = 500;

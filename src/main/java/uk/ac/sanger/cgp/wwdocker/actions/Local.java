@@ -53,6 +53,7 @@ import org.codehaus.plexus.util.cli.Arg;
 import org.codehaus.plexus.util.cli.CommandLineUtils;
 import org.codehaus.plexus.util.cli.Commandline;
 import org.codehaus.plexus.util.cli.WriterStreamConsumer;
+import uk.ac.sanger.cgp.wwdocker.Config;
 
 /**
  *
@@ -92,13 +93,13 @@ public class Local {
     command = command.concat(" --dir /workflow");
     command = command.concat(" --ini /datastore/").concat(iniFile.getName());
     // this may need to be more itelligent than just the exit code
-    return execCommand(command, false);
+    return execCommand(command, Config.getEnvs(config), false);
   }
   
   public static int cleanDockerPath(BaseConfiguration config) {
     String command = baseDockerCommand(config);
     command = command.concat(" /bin/sh -c 'rm -rf /datastore/oozie-*'");
-    return execCommand(command, true);
+    return execCommand(config, command, true);
   }
   
   public static void pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
@@ -152,12 +153,11 @@ public class Local {
     return execCommand(command, noEnv, false);
   }
   
-  public static int execCommand(String command, boolean shellCmd) {
-    Map<String,String> noEnv = new HashMap();
-    return execCommand(command, noEnv, shellCmd);
+  public static int execCommand(BaseConfiguration config, String command, boolean shellCmd) {
+    return execCommand(command, Config.getEnvs(config), shellCmd);
   }
   
-  private static int execCommand(String command, Map envs, boolean shellCmd) {
+  public static int execCommand(String command, Map envs, boolean shellCmd) {
     ProcessBuilder pb;
     if(shellCmd) {
       pb = new ProcessBuilder("/bin/sh", "-c", command);
@@ -172,12 +172,11 @@ public class Local {
     Process p = null;
     try {
       p = pb.start();
+      String progErr = IOUtils.toString(p.getErrorStream());
+      String progOut = IOUtils.toString(p.getInputStream());
       exitCode = p.waitFor();
-      if(exitCode != 0) {
-        String progErr = IOUtils.toString(p.getErrorStream());
-        Utils.logOutput(progErr, Level.ERROR);
-      }
-      Utils.logOutput(IOUtils.toString(p.getInputStream()), Level.TRACE);
+      Utils.logOutput(progErr, Level.ERROR);
+      Utils.logOutput(progOut, Level.TRACE);
     } catch(InterruptedException | IOException e) {
       logger.error(e.getMessage(), e);
     }
@@ -189,5 +188,43 @@ public class Local {
     }
     return exitCode;
   }
+  
+//  private static int execCommand(String command, Map envs, boolean shellCmd) {
+//    ProcessBuilder pb;
+//    if(shellCmd) {
+//      pb = new ProcessBuilder("/bin/sh", "-c", command);
+//    }
+//    else {
+//      pb = new ProcessBuilder(command.split(" "));
+//    }
+//    pb.redirectErrorStream(true);
+//    Map<String, String> pEnv = pb.environment();
+//    pEnv.putAll(envs);
+//    logger.info("Executing: " + command);
+//    int exitCode = -1;
+//    Process p = null;
+//    try {
+//      p = pb.start();
+//      BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+//      String line;
+//      while ((line = reader.readLine()) != null && p.isAlive()) {
+//        logger.info(line);
+//      }
+//      exitCode = p.waitFor();
+//      if(exitCode != 0) {
+//        Utils.logOutput(progErr, Level.ERROR);
+//      }
+//      Utils.logOutput(IOUtils.toString(p.getInputStream()), Level.TRACE);
+//    } catch(InterruptedException | IOException e) {
+//      logger.error(e.getMessage(), e);
+//    }
+//    finally {
+//      if(p != null) {
+//        p.destroy();
+//        exitCode = p.exitValue();
+//      }
+//    }
+//    return exitCode;
+//  }
 }
 

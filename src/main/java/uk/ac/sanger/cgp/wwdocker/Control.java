@@ -48,7 +48,7 @@ public class Control {
   public static void main(String[] argv) throws Exception {
     int exitCode = 0;
     if(argv.length < 2) {
-      logger.fatal("Daemon type and configuration file must be supplied");
+      logger.fatal("Type and configuration file must be supplied");
       System.exit(1);
     }
     
@@ -61,7 +61,10 @@ public class Control {
     try {
       PropertiesConfiguration config = Config.loadConfig(configPath);
       Messaging rmq = new Messaging(config);
-      
+      if(daemonType.equalsIgnoreCase("errors")) {
+        ErrorLogs.getLog(config, rmq);
+        System.exit(0);
+      }
       Daemon runme = new DaemonFactory().getDaemon(daemonType, config, rmq);
       runme.run(mode);
     }

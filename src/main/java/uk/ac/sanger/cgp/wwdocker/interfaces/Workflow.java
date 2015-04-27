@@ -49,6 +49,7 @@ import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
 public interface Workflow {
   List filesToPush(File iniFile);
   List filesToPull(File iniFile);
+  String getFindLogsCmd();
   
   default String iniPathByState(BaseConfiguration config, String iniFile, HostStatus hs) {
     File tmp = new File(iniFile);

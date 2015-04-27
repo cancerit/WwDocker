@@ -47,11 +47,14 @@ import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
  */
 public class Docker implements Callable<Integer> {
   private static final Logger logger = LogManager.getLogger();
+  private static final String baseLogCmd = "cd /cgp/datastore/oozie-* ; find generated-scripts/ -type f > /cgp/datastore/toInclude.lst;";
+  private static final String packageLogs = "tar -C /cgp/datastore/oozie-* -czf /cgp/datastore/logs.tar.gz -T /cgp/toInclude.lst";
   private Thread t;
   private String threadName;
   private WorkflowIni iniFile;
   private File remoteIni;
   private BaseConfiguration config;
+  File logArchive = null;
    
   public Docker(WorkflowIni iniFile, BaseConfiguration config) {
     this.config = config;
@@ -68,13 +71,38 @@ public class Docker implements Callable<Integer> {
       FileUtils.writeStringToFile(remoteIni, iniFile.getIniContent(), null);
       
       result = Local.runDocker(config, remoteIni);
+      if(result != 0) {
+        // we should package the results as defined by the config of this workflow type
+        logArchive = packageLogs();
+      }
       
-      remoteIni.delete();
     } catch (IOException e) {
       throw new RuntimeException(e.getMessage(), e);
     }
     
     logger.info("Thread " + threadName + " exiting.");
     return result;
+  }
+  
+  public File getLogArchive() {
+    return logArchive;
+  }
+  
+  private File packageLogs() {
+    String oozieBase = config.getString("datastoreDir").concat("/oozie-*");
+    String includeFile = config.getString("datastoreDir").concat("/toInclude.lst");
+    File logArchive = Paths.get(config.getString("datastoreDir"),"logs.tar.gz").toFile();
+    
+    String command = "cd ".concat(oozieBase)
+      .concat("; find generated-scripts/ -type f > ")
+      .concat(includeFile).concat(";")
+      .concat(iniFile.getLogSearchCmd())
+      .concat(">>").concat(includeFile)
+      .concat(";tar -C ").concat(oozieBase)
+      .concat(" -czf ")
+      .concat(logArchive.getAbsolutePath())
+      .concat(" -T ").concat(includeFile);
+    Local.execCommand(config, command, true);
+    return logArchive;
   }
 }

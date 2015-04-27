@@ -84,4 +84,15 @@
                 <exec.executable>java</exec.executable>
             </properties>
         </action>
+        <action>
+            <actionName>CUSTOM-getErrors</actionName>
+            <displayName>getErrors</displayName>
+            <goals>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar ERRORS config/default.cfg</exec.args>
+                <exec.executable>java</exec.executable>
+            </properties>
+        </action>
     </actions>

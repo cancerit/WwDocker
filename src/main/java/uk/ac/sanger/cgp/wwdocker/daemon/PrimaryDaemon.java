@@ -34,14 +34,14 @@ package uk.ac.sanger.cgp.wwdocker.daemon;
 import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
@@ -108,12 +108,15 @@ public class PrimaryDaemon implements Daemon {
      * There is a way to get the config to load when changed, however it only
      * matters when we loop round so we may as well just rebuild the object
      */ 
-    Set<String> hosts = hostSet(config);
+    Map <String, String> hosts = new LinkedHashMap<>();
+    hostSet(config, hosts);
     cleanHostQueues(hosts);
     
     if(mode != null && mode.equalsIgnoreCase("KILLALL")) {
       killAll(hosts, thisJar, tmpConf);
     }
+    
+    hosts.clear(); // needs to be clean before looping starts
     
     // this holds md5 of this JAR and the config (which lists the workflow code to use)
     WorkerState provState = new WorkerState(thisJar, tmpConf);
@@ -122,14 +125,29 @@ public class PrimaryDaemon implements Daemon {
       addWorkToPend(workManager, config);
       
       // this is a reload as this can change during execution
-      hosts = hostSet(config);
+      hostSet(config, hosts);
       
-      for(String host:hosts) {
+      for(Map.Entry<String,String> e : hosts.entrySet()) {
+        if(e.getValue().equals("CURRENT")) {
+          continue;
+        }
+        
+        String host = e.getKey();
+        if(e.getValue().equals("KILL")) {
+          provState.setChangeStatusTo(HostStatus.KILL);
+          messaging.sendMessage("wwd_"+host, Utils.objectToJson(provState));
+          hosts.replace(host, "DELETE");
+          continue;
+        }
+        
         provState.setChangeStatusTo(HostStatus.CHECKIN);
         provState.setReplyToQueue("wwd-active");
-        if(!messaging.queryGaveResponse("wwd_"+host, provState.getReplyToQueue(), Utils.objectToJson(provState), 3000)) {
-          logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
-          provisionHost(host, config, thisJar, tmpConf, mode, envs);
+        if(e.getValue().equals("TO_PROVISION")) {
+          if(!messaging.queryGaveResponse("wwd_"+host, provState.getReplyToQueue(), Utils.objectToJson(provState), 3000)) {
+            logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
+            provisionHost(host, config, thisJar, tmpConf, mode, envs);
+          }
+          hosts.replace(host, "CURRENT");
           break; // so we start some work on this host before provisioning more
         }
       }
@@ -138,12 +156,36 @@ public class PrimaryDaemon implements Daemon {
     }
   }
   
-  private Set<String> hostSet(BaseConfiguration config) {
+  private void hostSet(BaseConfiguration config, Map<String, String> hosts) {
+    // first remove the killed off hosts
+    List toRemove = new ArrayList();
+    for(Map.Entry<String,String> e : hosts.entrySet()) {
+      if(e.getValue().equals("DELETE")) {
+        toRemove.add(e.getKey());
+      }
+    }
+    hosts.keySet().removeAll(toRemove);
+    
+    // add the new hosts
     BaseConfiguration workerConf = Config.loadWorkers(config.getString("workerCfg"));
     String[] rawHosts = workerConf.getStringArray("hosts");
-    Set<String> hosts = new LinkedHashSet<>(); // ordered
-    hosts.addAll(Arrays.asList(rawHosts));
-    return hosts;
+    if(rawHosts.length == 1 && rawHosts[0].equals(new String())) {
+      rawHosts = new String[0];
+    }
+    Set<String> tmp = new LinkedHashSet<>();
+    for(String h : rawHosts) {
+      if(!hosts.containsKey(h)) {
+        hosts.put(h, "TO_PROVISION");
+      }
+      tmp.add(h);
+    }
+    
+    // identify which hosts need to be killed
+    for(Map.Entry<String,String> e : hosts.entrySet()) {
+      if(!tmp.contains(e.getKey())) {
+        hosts.replace(e.getKey(), "KILL");
+      }
+    }
   }
   
   private void addWorkToPend(Workflow workManager, BaseConfiguration config) throws IOException, InterruptedException {
@@ -162,7 +204,9 @@ public class PrimaryDaemon implements Daemon {
     }
     for(File iniFile : iniFiles) {
       if(!allInis.containsKey(iniFile.getAbsolutePath())) {
-        allInis.put(iniFile.getAbsolutePath(), new WorkflowIni(iniFile));
+        WorkflowIni newIni = new WorkflowIni(iniFile);
+        newIni.setLogSearchCmd(workManager.getFindLogsCmd());
+        allInis.put(iniFile.getAbsolutePath(), newIni);
       }
     }
 
@@ -223,20 +267,20 @@ public class PrimaryDaemon implements Daemon {
     Remote.startWorkerDaemon(ssh, thisJar.getName(), mode);
   }
   
-  private void killAll(Set<String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException {
-    WorkerState killState = new WorkerState(thisJar, thisConf); // intentionally broken object which will cause all clients to shutdown
+  private void killAll(Map<String,String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException {
+    WorkerState killState = new WorkerState(thisJar, thisConf);
     killState.setChangeStatusTo(HostStatus.KILL);
     String killJson = Utils.objectToJson(killState);
-    for(String host : hosts) {
-      messaging.sendMessage("wwd_"+host, killJson);
+    for(Map.Entry<String,String> e : hosts.entrySet()) {
+      messaging.sendMessage("wwd_"+e.getKey(), killJson);
     }
     logger.fatal("All hosts shutting down as requested... exiting");
     System.exit(0);
   }
   
-  private void cleanHostQueues(Set<String> hosts) throws IOException, InterruptedException {
-    for(String host : hosts) {
-      messaging.getMessageStrings("wwd_"+host, 50);
+  private void cleanHostQueues(Map<String,String> hosts) throws IOException, InterruptedException {
+    for(Map.Entry<String,String> e : hosts.entrySet()) {
+      messaging.getMessageStrings("wwd_"+e.getKey(), 50);
     }
   }
   

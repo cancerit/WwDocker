@@ -30,18 +30,22 @@
  */
 package uk.ac.sanger.cgp.wwdocker.messages;
 
-import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.AMQP.BasicProperties;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 import com.rabbitmq.client.QueueingConsumer;
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.io.FileUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
@@ -101,6 +105,47 @@ public class Messaging {
     channel.basicPublish("", queue, mProp, message.getBytes());
     logger.info(queue + " sent: " + message);
     channel.close();
+  }
+  
+  public void sendFile(String queue, String host, File f) throws IOException, InterruptedException {
+    Map<String, Object> headers =  new HashMap();
+    headers.put("host", host);
+    BasicProperties mProp = new BasicProperties.Builder().headers(headers).build();
+    Channel channel = connectionSend.createChannel();
+    channel.queueDeclare(queue, false, false, false, null);
+    channel.basicPublish("", queue, mProp, Files.readAllBytes(f.toPath()));
+    logger.info(queue + " file: " + f.getAbsolutePath());
+    channel.close();
+  }
+  
+  public File getFile(String queue, Path outFolder, boolean ack, long wait) throws IOException, InterruptedException {
+    File outTo = null;
+    Channel channel = connectionRcv.createChannel();
+    channel.queueDeclare(queue, false, false, false, null);
+
+    QueueingConsumer consumer = new QueueingConsumer(channel);
+    channel.basicConsume(queue, false, consumer);
+    QueueingConsumer.Delivery delivery;
+    if(wait == -1) {
+      delivery = consumer.nextDelivery(); // will block until response
+    }
+    else {
+      delivery = consumer.nextDelivery(wait);
+    }
+    if(delivery != null) {
+      String host = delivery.getProperties().getHeaders().get("host").toString();
+      outTo = Paths.get(outFolder.toString(), host + ".tar.gz").toFile();
+      FileUtils.writeByteArrayToFile(outTo, delivery.getBody());
+      if(ack) {
+        channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+      }
+      else {
+        channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
+      }
+      logger.info(queue + " retrieved: " + outTo.getAbsolutePath());
+    }
+    channel.close();
+    return outTo;
   }
   
   public WorkerState getWorkerState(String queue, long wait) throws IOException, InterruptedException {
@@ -174,7 +219,7 @@ public class Messaging {
     }
     else {
       // clean up queue we sent the query
-      getMessageStrings(queryQueue, 10);
+      getMessageStrings(queryQueue, 100);
     }
     return response;
   }
@@ -185,15 +230,20 @@ public class Messaging {
 
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, false, consumer);
-    QueueingConsumer.Delivery delivery = consumer.nextDelivery(50);
-    if(delivery != null) {
+    boolean foundMyMessage = false;
+    QueueingConsumer.Delivery delivery = consumer.nextDelivery(200);
+    int maxTries = 5;
+    while(!foundMyMessage && delivery != null && maxTries > 0) {
       // the toString in the middle of this is needed as it is wrapped with another type that can hold 4GB
       if(delivery.getProperties().getHeaders().get("host").toString().equals(hostToRemove)) {
         channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+        foundMyMessage = true;
       }
       else {
         channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
       }
+      delivery = consumer.nextDelivery(200);
+      maxTries--;
     }
     channel.close();
   }

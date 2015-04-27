@@ -53,7 +53,7 @@ import org.apache.logging.log4j.Logger;
 public class Config {
   private static final Logger logger = LogManager.getLogger();
   
-  private static final String[] optionalEnvs = {"http_proxy", "https_proxy"};
+  private static final String[] optionalEnvs = {"http_proxy", "https_proxy", "no_proxy"};
   
   public static PropertiesConfiguration loadConfig(String configPath) {
     return loadConfig(configPath, ',', true);
