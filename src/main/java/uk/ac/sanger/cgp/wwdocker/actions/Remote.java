@@ -41,6 +41,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Paths;
 import java.util.Properties;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
@@ -126,18 +127,42 @@ public class Remote {
     return session;
   }
   
-  public static void stageDocker(Session session, String image) {
-    cleanupOldImages(session); // incase lots of stale ones are already present
-    String command = "docker pull " + image;
+  public static int dockerLoad(Session session, String[] images, String workspace) {
+    int exitCode = -1;
     try {
-      execCommand(session, command);
+      for(String i : images) {
+        File f = new File(i);
+        String destFile = Paths.get(workspace,f.getName()).toFile().getPath();
+        Remote.curl(session, i, destFile);
+        String command = "docker load -i " + destFile;
+        exitCode = execCommand(session, command);
+        if(exitCode != 0) {
+          break;
+        }
+      }
     } catch(JSchException e) {
       throw new RuntimeException("Failure in SSH connection", e);
     }
-    cleanupOldImages(session); // incase we replaced one
+    return exitCode;
   }
   
-  private static void cleanupOldImages(Session session) {
+  public static int dockerPull(Session session, String[] images) {
+    int exitCode = -1;
+    try {
+      for(String i : images) {
+        String command = "docker pull " + i;
+        exitCode = execCommand(session, command);
+        if(exitCode != 0) {
+          break;
+        }
+      }
+    } catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection", e);
+    }
+    return exitCode;
+  }
+  
+  public static void cleanupOldImages(Session session) {
     String command = "docker images | grep \"<none>\" | awk '{print $3}' | xargs docker rmi";
     try {
       execCommand(session, command);
@@ -160,7 +185,7 @@ public class Remote {
     }
   }
   
-  public static void cleanFiles(Session session, String[] files) {
+  public static int cleanFiles(Session session, String[] files) {
     String command = "rm -f";
     for(String p : files) {
       if(p.equals("/*")) {
@@ -168,15 +193,15 @@ public class Remote {
       }
       command = command.concat(" ").concat(p);
     }
-    paramExec(session, command);
+    return paramExec(session, command);
   }
   
-  public static void expandJre(Session session, File localJre) {
+  public static int expandJre(Session session, File localJre) {
     String command = "tar --strip-components=1 -C /opt/jre -zxf /opt/".concat(localJre.getName());
-    paramExec(session, command);
+    return paramExec(session, command);
   }
   
-  public static void expandWorkflow(Session session, File localWorkflow, File seqwareJar, String workflowBase) {
+  public static int expandWorkflow(Session session, File localWorkflow, File seqwareJar, String workflowBase) {
     //java -cp seqware-distribution-1.1.0-alpha.6-full.jar net.sourceforge.seqware.pipeline.tools.UnZip --input-zip
     String workflowDir = workflowBase.concat("/").concat(localWorkflow.getName());
     workflowDir = workflowDir.replaceFirst("[.]zip$", "");
@@ -186,41 +211,46 @@ public class Remote {
     command = command.concat(localWorkflow.getAbsolutePath());
     command = command.concat(" --output-dir ");
     command = command.concat(workflowDir);
-    paramExec(session, command);
+    return paramExec(session, command);
   }
   
-  public static void createPaths(Session session, String[] paths) {
+  public static int createPaths(Session session, String[] paths) {
     String command = "mkdir -p";
-    paramExec(session, command, paths);
+    return paramExec(session, command, paths);
   }
   
-  public static void chmodPath(Session session, String mode, String path, boolean recursive) {
+  public static int chmodPath(Session session, String mode, String path, boolean recursive) {
     String[] paths = {path};
-    chmodPaths(session, mode, paths, recursive);
+    return chmodPaths(session, mode, paths, recursive);
   }
   
-  public static void chmodPaths(Session session, String mode, String[] paths, boolean recursive) {
+  public static int chmodPaths(Session session, String mode, String[] paths, boolean recursive) {
     String command = "chmod ";
     if(recursive) {
       command = command.concat("-R ");
     }
     command = command.concat(mode);
-    paramExec(session, command, paths);
+    return paramExec(session, command, paths);
   }
   
-  private static void paramExec(Session session, String command) {
-    paramExec(session, command, new String[0]);
+  private static int paramExec(Session session, String command) {
+    return paramExec(session, command, new String[0]);
   }
   
-  private static void paramExec(Session session, String command, String[] params) {
+  private static int paramExec(Session session, String command, String[] params) {
+    int exitCode = 0;
     for(String param:params) {
       command = command.concat(" ").concat(param);
     }
     try {
-      execCommand(session, command);
+      int thisExitCode = execCommand(session, command);
+      if(thisExitCode != 0) {
+        exitCode = thisExitCode;
+      }
     } catch(JSchException e) {
       throw new RuntimeException("Failure in SSH connection", e);
     }
+    return exitCode;
   }
   
   public static void listDir(Session session, String path) {
@@ -232,20 +262,43 @@ public class Remote {
     }
   }
   
-  public static void startWorkerDaemon(Session session, String jarName, String mode) {
+  public static int startWorkerDaemon(Session session, String jarName, String mode) {
+    int exitCode = -1;
     //java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
     String command = "/opt/jre/bin/java -Xmx128m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
                       .concat(jarName)
-                      .concat(" Worker /opt/remote.cfg");
+                      .concat(" /opt/remote.cfg Worker");
     if(mode != null) {
       command = command.concat(" ").concat(mode);
     }
     command = command.concat(" >& /dev/null &");
     try {
-      execCommand(session, command);
+      exitCode = execCommand(session, command);
     } catch(JSchException e) {
       throw new RuntimeException("Failure in SSH connection while starting daemon", e);
     }
+    return exitCode;
+  }
+  
+  public static int curl(Session session, String source, String destPath) {
+    int exitCode = -1;
+    try {
+      String[] elements = source.split("/");
+      if(!destPath.endsWith(System.getProperty("file.separator"))) {
+        destPath = destPath.concat(System.getProperty("file.separator"));
+      }
+      destPath = destPath.concat(elements[elements.length-1]);
+      // -z only transfer if modified
+      String getCommand = "curl -RLsS"
+                            .concat(" -z ").concat(destPath)
+                            .concat(" -o ").concat(destPath)
+                            .concat(" ").concat(source);
+      exitCode = execCommand(session, getCommand);
+    }
+    catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection", e);
+    }
+    return exitCode;
   }
   
   private static int execCommand(Session session, String command) throws JSchException {
@@ -362,8 +415,6 @@ public class Remote {
   }
   
   public static int fileTo(Session session, String localFile, String remoteFile) throws JSchException {
-    int exitCode = -1;
-    
     if(remoteIsEqual(session, localFile, remoteFile)) {
       logger.info("Files are equal, not performing SCP");
       return 0;
@@ -388,8 +439,8 @@ public class Remote {
       FileInputStream fis=null;
 
       if (checkAck(in) != 0) {
-        throw new RuntimeException("scp failed");
-        //System.exit(0);
+        logger.error("scp failed");
+        return 1;
       }
 
       File _lfile = new File(localFile);
@@ -402,8 +453,8 @@ public class Remote {
         out.write(command.getBytes());
         out.flush();
         if (checkAck(in) != 0) {
-          throw new RuntimeException("scp failed");
-          //System.exit(0);
+          logger.error("scp failed");
+          return 1;
         }
       }
 
@@ -419,8 +470,8 @@ public class Remote {
       out.write(command.getBytes());
       out.flush();
       if (checkAck(in) != 0) {
-        throw new RuntimeException("scp failed");
-        //System.exit(0);
+        logger.error("scp failed");
+        return 1;
       }
 
       // send a content of lfile
@@ -440,8 +491,8 @@ public class Remote {
       out.write(buf, 0, 1);
       out.flush();
       if (checkAck(in) != 0) {
-        throw new RuntimeException("scp failed");
-        //System.exit(0);
+        logger.error("scp failed");
+        return 1;
       }
       out.close();
     }
@@ -450,7 +501,7 @@ public class Remote {
     }
     channel.disconnect();
     logger.info("Send complete");
-    return exitCode;
+    return 0;
   }
   
   private static int checkAck(InputStream in) throws IOException {

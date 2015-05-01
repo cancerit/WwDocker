@@ -34,25 +34,18 @@ package uk.ac.sanger.cgp.wwdocker.actions;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.Writer;
-import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.codehaus.plexus.util.cli.Arg;
-import org.codehaus.plexus.util.cli.CommandLineUtils;
-import org.codehaus.plexus.util.cli.Commandline;
-import org.codehaus.plexus.util.cli.WriterStreamConsumer;
 import uk.ac.sanger.cgp.wwdocker.Config;
 
 /**
@@ -98,19 +91,52 @@ public class Local {
   
   public static int cleanDockerPath(BaseConfiguration config) {
     String command = baseDockerCommand(config);
-    command = command.concat(" /bin/sh -c 'rm -rf /datastore/oozie-*'");
-    return execCommand(config, command, true);
+    command = command.concat(" /bin/sh -c");
+    List<String> args = new ArrayList(Arrays.asList(command.split(" ")));
+    args.add("rm -rf /datastore/oozie-*");
+    
+    ProcessBuilder pb = new ProcessBuilder(args);
+
+    Map<String, String> pEnv = pb.environment();
+    pEnv.putAll(Config.getEnvs(config));
+    logger.info("Executing: " + String.join(" ", args));
+    int exitCode = -1;
+    Process p = null;
+    try {
+      p = pb.start();
+      String progErr = IOUtils.toString(p.getErrorStream());
+      String progOut = IOUtils.toString(p.getInputStream());
+      exitCode = p.waitFor();
+      Utils.logOutput(progErr, Level.ERROR);
+      Utils.logOutput(progOut, Level.TRACE);
+    } catch(InterruptedException | IOException e) {
+      logger.error(e.getMessage(), e);
+    }
+    finally {
+      if(p != null) {
+        p.destroy();
+        exitCode = p.exitValue();
+      }
+    }
+    return exitCode;
   }
   
-  public static void pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
+  public static int pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
+    int exitCode = 0;
     for(File source : sources) {
-      pushToHost(source.getAbsolutePath(), destHost, destPath, envs, session, tmpIn);
+      int lExit = pushToHost(source.getAbsolutePath(), destHost, destPath, envs, session, tmpIn);
+      if(lExit != 0) {
+        exitCode = lExit;
+        break;
+      }
     }
+    return exitCode;
   }
   
   public static int pushToHost(String source, String destHost, String destPath, Map envs, Session session, File tmpIn) {
     String localFile = source;
     int exitCode = -1;
+    int pullExit = 0;
     if(source.startsWith("http") || source.startsWith("ftp")) {
       String[] elements = source.split("/");
       String localTmp;
@@ -129,12 +155,17 @@ public class Local {
                             .concat(" -z ").concat(localFile)
                             .concat(" -o ").concat(localFile)
                             .concat(" ").concat(source);
-      exitCode = execCommand(getCommand, envs);
+      pullExit = execCommand(getCommand, envs);
     }
-    try {
-      Remote.fileTo(session, localFile, destPath.concat("/."));
-    } catch(JSchException e) {
-      throw new RuntimeException("Failure in SSH connection", e);
+    if(pullExit == 0) {
+      try {
+        exitCode = Remote.fileTo(session, localFile, destPath.concat("/."));
+      } catch(JSchException e) {
+        throw new RuntimeException("Failure in SSH connection", e);
+      }
+    }
+    else {
+      exitCode = pullExit;
     }
     return exitCode;
   }

@@ -30,11 +30,15 @@
  */
 package uk.ac.sanger.cgp.wwdocker;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
+import java.util.List;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.codehaus.plexus.util.FileUtils;
+import uk.ac.sanger.cgp.wwdocker.actions.Local;
 import uk.ac.sanger.cgp.wwdocker.messages.Messaging;
 
 /**
@@ -44,14 +48,28 @@ import uk.ac.sanger.cgp.wwdocker.messages.Messaging;
 public class ErrorLogs {
   private static final Logger logger = LogManager.getLogger();
   
-  public static void getLog(PropertiesConfiguration config, Messaging messaging) {
+  public static void getLog(PropertiesConfiguration config, Messaging messaging, String outBase) throws IOException {
+    List<File> logSets = null;
     try {
-      messaging.getFile("wwd_ERRORLOGS", Paths.get("/var/tmp"), false, -1);
-      
+      logSets = messaging.getFiles(config.getString("qPrefix").concat(".ERRORLOGS"), Paths.get(outBase), false);
     } catch(IOException | InterruptedException e) {
       logger.fatal(e.getMessage(), e);
       System.exit(1);
     }
+    
+    if(logSets != null) {
+      for(File f : logSets) {
+        String host = f.getName().replaceAll("\\.tar\\.gz$", "");
+        File d = Paths.get(outBase, host).toFile();
+        if(d.exists()) {
+          FileUtils.deleteDirectory(d);
+        }
+        d.mkdirs();
+        String command = "tar -C ".concat(d.getAbsolutePath()).concat(" -zxf ").concat(f.getAbsolutePath());
+        Local.execCommand(command);
+      }
+    }
+    
     System.exit(0);
   }
     

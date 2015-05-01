@@ -49,7 +49,7 @@ public class WorkflowIni {
   
   public WorkflowIni(File iniFile) throws IOException {
     this.iniFile = iniFile;
-    iniContent = FileUtils.readFileToString(iniFile, null);
+    iniContent = FileUtils.readFileToString(iniFile, null).toString();
   }
 
   /**

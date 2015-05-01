@@ -37,9 +37,8 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
 
 /**
@@ -50,6 +49,7 @@ public interface Workflow {
   List filesToPush(File iniFile);
   List filesToPull(File iniFile);
   String getFindLogsCmd();
+  boolean provisionHost(String host, BaseConfiguration config, File thisJar, File tmpConf, String mode, Map<String,String> envs) throws InterruptedException;
   
   default String iniPathByState(BaseConfiguration config, String iniFile, HostStatus hs) {
     File tmp = new File(iniFile);

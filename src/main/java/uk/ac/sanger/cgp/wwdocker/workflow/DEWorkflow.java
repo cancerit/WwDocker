@@ -52,13 +52,13 @@ import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
  *
  * @author kr2
  */
-public class SangerWorkflow implements Workflow {
+public class DEWorkflow implements Workflow {
   private static final Logger logger = LogManager.getLogger();
   PropertiesConfiguration config;
   
   private static final String logSearchCmd = "find seqware-results/ -type f | grep -F '/logs/'";
   
-  public SangerWorkflow(PropertiesConfiguration config) {
+  public DEWorkflow(PropertiesConfiguration config) {
     this.config = config;
   }
   
@@ -70,34 +70,7 @@ public class SangerWorkflow implements Workflow {
   @Override
   public List filesToPush(File iniFile) {
     List files = new ArrayList();
-    files.add(iniFile);
-    logger.trace(iniFile);
-    BaseConfiguration wkflConf = Config.loadConfig(iniFile.getAbsolutePath(), new Character(':'), false);
-    if(wkflConf.getBoolean("testMode")) {
-      logger.info(iniFile.getAbsolutePath() + " is set as testMode=true, no BAMs to transfer");
-    }
-    else {
-      // Add construct the paths to the local files
-      List analysisIds = wkflConf.getList("tumourAnalysisIds");
-      analysisIds.add(wkflConf.getList("controlAnalysisId"));
-      List bamFiles = wkflConf.getList("tumourBams");
-      bamFiles.add(wkflConf.getList("controlBam"));
-      if(analysisIds.size() != bamFiles.size()) {
-        throw new RuntimeException("Number of *AnalysisId[s] is not equal to the number of *Bam[s] in workfile: " + iniFile.getAbsolutePath());
-      }
-      for(int i=0; i<analysisIds.size(); i++) {
-        String analysisId = (String) analysisIds.get(i);
-        String bamFile = (String) bamFiles.get(i);
-        File bamPath = new File(config.getString("data_root")
-                                .concat("/").concat(analysisId)
-                                .concat("/").concat(bamFile)
-                              );
-        if(!bamPath.exists()) {
-          throw new RuntimeException("Unable to find BAM file (" + bamPath.getAbsolutePath() + ") expected from worfile: " + iniFile.getAbsolutePath());
-        }
-        files.add(bamPath);
-      }
-    }
+    // see example in SangerWorkflow if we need this later
     return files;
   }
   
@@ -119,6 +92,7 @@ public class SangerWorkflow implements Workflow {
     File remoteSeqwareJar = new File(remoteWorkflowDir.concat("/").concat(localSeqwareJar.replaceAll(".*/", "")));
     File remoteWorkflowZip = new File(remoteWorkflowDir.concat("/").concat(localWorkflowZip.replaceAll(".*/", "")));
     String[] pullDockerImages = config.getStringArray("pullDockerImages");
+    String[] curlDockerImages = config.getStringArray("curlDockerImages");
     String optDir = "/opt";
     String workerLog = config.getString("log4-worker");
     File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
@@ -129,9 +103,11 @@ public class SangerWorkflow implements Workflow {
     Remote.chmodPaths(ssh, "a+wrx", makePaths, true);
     Remote.cleanFiles(ssh, new String[]{config.getString("log4-delete")});
     
-    if (Remote.dockerPull(ssh, pullDockerImages) != 0) {
+    Remote.cleanupOldImages(ssh); // incase lots of stale ones are already present
+    if (Remote.dockerPull(ssh, pullDockerImages) != 0 || Remote.dockerLoad(ssh, curlDockerImages, optDir) != 0) {
       return provisioned;
     }
+    Remote.cleanupOldImages(ssh); // incase lots of stale ones are already present
     
     if(Remote.curl(ssh, localSeqwareJar, remoteWorkflowDir) != 0) {
       return provisioned;

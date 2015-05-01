@@ -34,6 +34,8 @@ package uk.ac.sanger.cgp.wwdocker.daemon;
 import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -42,9 +44,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.FutureTask;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -56,8 +55,6 @@ import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
-import uk.ac.sanger.cgp.wwdocker.callable.PullWork;
-import uk.ac.sanger.cgp.wwdocker.callable.PushWork;
 import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
 import uk.ac.sanger.cgp.wwdocker.factories.WorkflowFactory;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
@@ -73,17 +70,6 @@ public class PrimaryDaemon implements Daemon {
   
   private static PropertiesConfiguration config;
   private static Messaging messaging;
-  
-  // don't clean wwd_PEND, you will loose your ini's already queued and moved
-  private static final String[] queuesToClean = {"wwd-active", "wwd_CLEAN", "wwd_DONE", "wwd_ERROR", "wwd_RUNNING"};
-  
-  private static ExecutorService pushExecutor = Executors.newSingleThreadExecutor();
-  private static FutureTask<Integer> pushTask = null;
-  private static FutureTask<Integer> pullTask = null;
-  private static PushWork pushThread = null;
-  private static PullWork pullThread = null;
-  private static WorkerState pushToWorker = null;
-  private static WorkerState pullFromWorker = null;
   
   public PrimaryDaemon(PropertiesConfiguration config, Messaging rmq) {
     PrimaryDaemon.config = config;
@@ -110,16 +96,17 @@ public class PrimaryDaemon implements Daemon {
      */ 
     Map <String, String> hosts = new LinkedHashMap<>();
     hostSet(config, hosts);
-    cleanHostQueues(hosts);
+    cleanHostQueues(config, hosts);
     
     if(mode != null && mode.equalsIgnoreCase("KILLALL")) {
-      killAll(hosts, thisJar, tmpConf);
+      killAll(config, hosts, thisJar, tmpConf);
     }
     
     hosts.clear(); // needs to be clean before looping starts
     
     // this holds md5 of this JAR and the config (which lists the workflow code to use)
     WorkerState provState = new WorkerState(thisJar, tmpConf);
+    String qPrefix = config.getString("qPrefix");
     
     while(true) {
       addWorkToPend(workManager, config);
@@ -135,17 +122,22 @@ public class PrimaryDaemon implements Daemon {
         String host = e.getKey();
         if(e.getValue().equals("KILL")) {
           provState.setChangeStatusTo(HostStatus.KILL);
-          messaging.sendMessage("wwd_"+host, Utils.objectToJson(provState));
+          messaging.sendMessage(qPrefix.concat(".").concat(host), Utils.objectToJson(provState));
           hosts.replace(host, "DELETE");
           continue;
         }
         
         provState.setChangeStatusTo(HostStatus.CHECKIN);
-        provState.setReplyToQueue("wwd-active");
+        provState.setReplyToQueue(qPrefix.concat(".ACTIVE"));
         if(e.getValue().equals("TO_PROVISION")) {
-          if(!messaging.queryGaveResponse("wwd_"+host, provState.getReplyToQueue(), Utils.objectToJson(provState), 3000)) {
+          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 3000)) {
             logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
-            provisionHost(host, config, thisJar, tmpConf, mode, envs);
+            if(!workManager.provisionHost(host, PrimaryDaemon.config, thisJar, tmpConf, mode, envs)) {
+              hosts.replace(host, "BROKEN");
+              messaging.removeFromStateQueue(qPrefix.concat(".").concat("BROKEN"), host); // just incase it's already there
+              messaging.sendMessage(qPrefix.concat(".").concat("BROKEN"), "Failed to provision", host);
+              break;
+            }
           }
           hosts.replace(host, "CURRENT");
           break; // so we start some work on this host before provisioning more
@@ -196,7 +188,8 @@ public class PrimaryDaemon implements Daemon {
     }
     
     // get all of the existing iniFiles so we can generate a uniq list
-    List<String> existing = messaging.getMessageStrings("wwd_PEND", -1);
+    String qPrefix = config.getString("qPrefix");
+    List<String> existing = messaging.getMessageStrings(qPrefix.concat(".PEND"), -1);
     Map<String, WorkflowIni> allInis= new HashMap();
     for (String m : existing) {
       WorkflowIni iniFile = (WorkflowIni) Utils.jsonToObject(m, WorkflowIni.class);
@@ -212,78 +205,39 @@ public class PrimaryDaemon implements Daemon {
 
     Iterator itr = allInis.values().iterator();
     while(itr.hasNext()) {
-      messaging.sendMessage("wwd_PEND", (WorkflowIni)itr.next());
+      messaging.sendMessage(qPrefix.concat(".PEND"), (WorkflowIni)itr.next());
     }
     
     workManager.iniUpdate(iniFiles, config, HostStatus.PEND);
   }
-  
-  private void provisionHost(String host, BaseConfiguration config, File thisJar, File tmpConf, String mode, Map<String,String> envs) throws InterruptedException {
-    String[] makePaths = config.getStringArray("makePaths");
-    String[] cleanPaths = config.getStringArray("cleanPaths");
-    String remoteWorkflowDir = config.getString("workflowDir");
-    String localSeqwareJar = config.getString("seqware"); // can be http location
-    String localWorkflowZip = config.getString("workflow"); // can be http location
-    File jreDist = Utils.expandUserFile(config, "jreDist", true);
-    File remoteSeqwareJar = new File(remoteWorkflowDir.concat("/").concat(localSeqwareJar.replaceAll(".*/", "")));
-    File remoteWorkflowZip = new File(remoteWorkflowDir.concat("/").concat(localWorkflowZip.replaceAll(".*/", "")));
-    String baseDockerImage = config.getString("baseDockerImage");
-    String optDir = "/opt";
-    String workerLog = config.getString("log4-worker");
-    File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
     
-    Session ssh = Remote.getSession(config, host);
-
-
-    // clean and setup paths
-//    if(mode == null || !mode.equalsIgnoreCase("test")) {
-//      Remote.cleanHost(ssh, cleanPaths);
-//    }
-    Remote.createPaths(ssh, makePaths);
-    Remote.chmodPaths(ssh, "a+wrx", makePaths, true);
-    Remote.cleanFiles(ssh, new String[]{config.getString("log4-delete")});
-
-    // setup docker and the seqware image
-    Remote.stageDocker(ssh, baseDockerImage);
-    Local.pushToHost(localSeqwareJar, host, remoteWorkflowDir, envs, ssh, localTmp);
-    // send jre
-    Local.pushToHost(jreDist.getAbsolutePath(), host, optDir, envs, ssh, localTmp);
-    Remote.expandJre(ssh, jreDist);
-
-    // send the workflow
-    Local.pushToHost(localWorkflowZip, host, remoteWorkflowDir, envs, ssh, localTmp);
-    Remote.expandWorkflow(ssh, remoteWorkflowZip, remoteSeqwareJar, remoteWorkflowDir);
-
-    // send the code needed to run the worker daemon, 
-    // DON'T send required items after this point as starting the daemon signifies successful setup
-    Local.pushToHost(thisJar.getAbsolutePath(), host, optDir, envs, ssh, localTmp);
-    Local.pushToHost(workerLog, host, optDir, envs, ssh, localTmp);
-    // config file
-    Local.pushToHost(tmpConf.getAbsolutePath(), host, optDir, envs, ssh, localTmp);
-    Remote.chmodPath(ssh, "go-wrx", optDir.concat("/*"), true); // file will have passwords
-    
-    Local.pushFileSetToHost(Utils.getGnosKeys(config), host, remoteWorkflowDir, envs, ssh, localTmp);
-
-    Remote.startWorkerDaemon(ssh, thisJar.getName(), mode);
-  }
-  
-  private void killAll(Map<String,String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException {
+  private void killAll(BaseConfiguration config, Map<String,String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException {
     WorkerState killState = new WorkerState(thisJar, thisConf);
     killState.setChangeStatusTo(HostStatus.KILL);
     String killJson = Utils.objectToJson(killState);
+    String qPrefix = config.getString("qPrefix");
     for(Map.Entry<String,String> e : hosts.entrySet()) {
-      messaging.sendMessage("wwd_"+e.getKey(), killJson);
+      messaging.sendMessage(qPrefix.concat(".").concat(e.getKey()), killJson);
     }
     logger.fatal("All hosts shutting down as requested... exiting");
     System.exit(0);
   }
   
-  private void cleanHostQueues(Map<String,String> hosts) throws IOException, InterruptedException {
+  private void cleanHostQueues(BaseConfiguration config, Map<String,String> hosts) throws IOException, InterruptedException {
+    String qPrefix = config.getString("qPrefix");
     for(Map.Entry<String,String> e : hosts.entrySet()) {
-      messaging.getMessageStrings("wwd_"+e.getKey(), 50);
+      messaging.getMessageStrings(qPrefix.concat(".").concat(e.getKey()), 50);
     }
   }
   
+//  private static final ExecutorService pushExecutor = Executors.newSingleThreadExecutor();
+//  private static FutureTask<Integer> pushTask = null;
+//  private static FutureTask<Integer> pullTask = null;
+//  private static PushWork pushThread = null;
+//  private static PullWork pullThread = null;
+//  private static WorkerState pushToWorker = null;
+//  private static WorkerState pullFromWorker = null;
+//
 //  private void startPush(Workflow workManager, WorkerState wsIn, Map<String,String> envs) throws IOException, InterruptedException {
 //    if(pushTask != null) {
 //      return;

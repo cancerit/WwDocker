@@ -42,8 +42,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.FileUtils;
 import org.apache.logging.log4j.LogManager;
@@ -78,15 +80,20 @@ public class Messaging {
   public Connection getRcvConn() {
     return connectionRcv;
   }
+  
+  public void sendMessage(String queue, Object in) throws IOException, InterruptedException {
+    sendMessage(queue, in, null);
+  }
 
   /**
    * Sends a message to the specified queue
    * @param queue
    * @param message
+   * @param host
    * @throws IOException
    * @throws InterruptedException 
    */
-  public void sendMessage(String queue, Object in) throws IOException, InterruptedException {
+  public void sendMessage(String queue, Object in, String host) throws IOException, InterruptedException {
     String message;
     BasicProperties mProp = null;
     if(in.getClass().equals(String.class)) {
@@ -94,14 +101,17 @@ public class Messaging {
     } else {
       message = Utils.objectToJson(in);
       if(in.getClass().equals(WorkerState.class)) {
-        Map<String, Object> headers =  new HashMap();
-        headers.put("host", ((WorkerState) in).getResource().getHostName());
-        mProp = new BasicProperties.Builder().headers(headers).build();
+        host = ((WorkerState) in).getResource().getHostName();
       }
+    }
+    if(host != null) {
+      Map<String, Object> headers =  new HashMap();
+      headers.put("host", host);
+      mProp = new BasicProperties.Builder().headers(headers).build();
     }
     
     Channel channel = connectionSend.createChannel();
-    channel.queueDeclare(queue, false, false, false, null);
+    channel.queueDeclare(queue, true, false, false, null);
     channel.basicPublish("", queue, mProp, message.getBytes());
     logger.info(queue + " sent: " + message);
     channel.close();
@@ -112,29 +122,26 @@ public class Messaging {
     headers.put("host", host);
     BasicProperties mProp = new BasicProperties.Builder().headers(headers).build();
     Channel channel = connectionSend.createChannel();
-    channel.queueDeclare(queue, false, false, false, null);
+    channel.queueDeclare(queue, true, false, false, null);
     channel.basicPublish("", queue, mProp, Files.readAllBytes(f.toPath()));
     logger.info(queue + " file: " + f.getAbsolutePath());
     channel.close();
   }
   
-  public File getFile(String queue, Path outFolder, boolean ack, long wait) throws IOException, InterruptedException {
-    File outTo = null;
+  public List<File> getFiles(String queue, Path outFolder, boolean ack) throws IOException, InterruptedException {
+    List files = new ArrayList();
     Channel channel = connectionRcv.createChannel();
-    channel.queueDeclare(queue, false, false, false, null);
+    channel.queueDeclare(queue, true, false, false, null);
 
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, false, consumer);
-    QueueingConsumer.Delivery delivery;
-    if(wait == -1) {
-      delivery = consumer.nextDelivery(); // will block until response
-    }
-    else {
-      delivery = consumer.nextDelivery(wait);
-    }
-    if(delivery != null) {
+    QueueingConsumer.Delivery delivery = consumer.nextDelivery(100);
+    
+    Set seen = new HashSet();
+    
+    while(delivery != null) {
       String host = delivery.getProperties().getHeaders().get("host").toString();
-      outTo = Paths.get(outFolder.toString(), host + ".tar.gz").toFile();
+      File outTo = Paths.get(outFolder.toString(), host + ".tar.gz").toFile();
       FileUtils.writeByteArrayToFile(outTo, delivery.getBody());
       if(ack) {
         channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
@@ -142,16 +149,22 @@ public class Messaging {
       else {
         channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
       }
+      if(seen.contains(delivery.getProperties().getHeaders().get("host"))) {
+        break;
+      }
+      seen.add(delivery.getProperties().getHeaders().get("host"));
+      files.add(outTo);
       logger.info(queue + " retrieved: " + outTo.getAbsolutePath());
+      delivery = consumer.nextDelivery(100);
     }
     channel.close();
-    return outTo;
+    return files;
   }
   
   public WorkerState getWorkerState(String queue, long wait) throws IOException, InterruptedException {
     WorkerState ws = null;
     Channel channel = connectionRcv.createChannel();
-    channel.queueDeclare(queue, false, false, false, null);
+    channel.queueDeclare(queue, true, false, false, null);
 
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, false, consumer);
@@ -191,7 +204,7 @@ public class Messaging {
   public String getMessageString(String queue, long wait) throws IOException, InterruptedException {
     String message = null;
     Channel channel = connectionRcv.createChannel();
-    channel.queueDeclare(queue, false, false, false, null);
+    channel.queueDeclare(queue, true, false, false, null);
 
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, false, consumer);
@@ -226,7 +239,7 @@ public class Messaging {
   
   public void removeFromStateQueue(String queue, String hostToRemove) throws IOException, InterruptedException {
     Channel channel = connectionRcv.createChannel();
-    channel.queueDeclare(queue, false, false, false, null);
+    channel.queueDeclare(queue, true, false, false, null);
 
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, false, consumer);
@@ -259,7 +272,7 @@ public class Messaging {
   public List<String> getMessageStrings(String queue, long wait) throws IOException, InterruptedException {
     List<String> responses = new ArrayList();
     Channel channel = connectionRcv.createChannel();
-    channel.queueDeclare(queue, false, false, false, null);
+    channel.queueDeclare(queue, true, false, false, null);
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, true, consumer);
     while (true) {

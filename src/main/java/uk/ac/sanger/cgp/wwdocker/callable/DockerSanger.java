@@ -45,10 +45,8 @@ import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
  *
  * @author kr2
  */
-public class Docker implements Callable<Integer> {
+public class DockerSanger implements Callable<Integer> {
   private static final Logger logger = LogManager.getLogger();
-  private static final String baseLogCmd = "cd /cgp/datastore/oozie-* ; find generated-scripts/ -type f > /cgp/datastore/toInclude.lst;";
-  private static final String packageLogs = "tar -C /cgp/datastore/oozie-* -czf /cgp/datastore/logs.tar.gz -T /cgp/toInclude.lst";
   private Thread t;
   private String threadName;
   private WorkflowIni iniFile;
@@ -56,7 +54,7 @@ public class Docker implements Callable<Integer> {
   private BaseConfiguration config;
   File logArchive = null;
    
-  public Docker(WorkflowIni iniFile, BaseConfiguration config) {
+  public DockerSanger(WorkflowIni iniFile, BaseConfiguration config) {
     this.config = config;
     this.threadName = iniFile.getIniFile().getName();
     this.iniFile = iniFile;
@@ -88,11 +86,13 @@ public class Docker implements Callable<Integer> {
     return logArchive;
   }
   
-  private File packageLogs() {
+  public File packageLogs() {
     String oozieBase = config.getString("datastoreDir").concat("/oozie-*");
     String includeFile = config.getString("datastoreDir").concat("/toInclude.lst");
-    File logArchive = Paths.get(config.getString("datastoreDir"),"logs.tar.gz").toFile();
-    
+    File logTar = Paths.get(config.getString("datastoreDir"),"logs.tar.gz").toFile();
+    if(logTar.exists()) {
+      logTar.delete();
+    }
     String command = "cd ".concat(oozieBase)
       .concat("; find generated-scripts/ -type f > ")
       .concat(includeFile).concat(";")
@@ -100,9 +100,9 @@ public class Docker implements Callable<Integer> {
       .concat(">>").concat(includeFile)
       .concat(";tar -C ").concat(oozieBase)
       .concat(" -czf ")
-      .concat(logArchive.getAbsolutePath())
+      .concat(logTar.getAbsolutePath())
       .concat(" -T ").concat(includeFile);
     Local.execCommand(config, command, true);
-    return logArchive;
+    return logTar;
   }
 }

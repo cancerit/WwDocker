@@ -44,29 +44,43 @@ import uk.ac.sanger.cgp.wwdocker.messages.Messaging;
  */
 public class Control {
   private static final Logger logger = LogManager.getLogger();
+  private static final String USAGE = "\nThe following are valid usage patterns:"
+    + "\n\n\tconfig.cfg PRIMARY"
+    + "\n\t\t- Starts the 'head' node daemon which provisions and monitors workers"
+    + "\n\n\tconfig.cfg PRIMARY KILLALL"
+    + "\n\t\t- Issues KILL message to all hosts listed in the workers.cfg file"
+    + "\n\n\tconfig.cfg ERRORS /some/path [hostname]"
+    + "\n\t\t- Gets and expands logs from the *.ERRORLOG queue";
   
   public static void main(String[] argv) throws Exception {
     int exitCode = 0;
     if(argv.length < 2) {
-      logger.fatal("Type and configuration file must be supplied");
+      System.err.println(USAGE);
+      logger.fatal(USAGE);
       System.exit(1);
     }
     
-    String daemonType = argv[0];
-    String configPath = argv[1];
-    String mode = null;
+    String configPath = argv[0];
+    String executionPath = argv[1];
+    
+    String modeOrPath = null;
     if(argv.length == 3) {
-      mode = argv[2];
+      modeOrPath = argv[2];
     }
     try {
       PropertiesConfiguration config = Config.loadConfig(configPath);
       Messaging rmq = new Messaging(config);
-      if(daemonType.equalsIgnoreCase("errors")) {
-        ErrorLogs.getLog(config, rmq);
+      if(executionPath.equalsIgnoreCase("errors")) {
+        if(modeOrPath == null) {
+          logger.fatal(USAGE);
+          System.err.println(USAGE);
+          System.exit(1);
+        }
+        ErrorLogs.getLog(config, rmq, modeOrPath);
         System.exit(0);
       }
-      Daemon runme = new DaemonFactory().getDaemon(daemonType, config, rmq);
-      runme.run(mode);
+      Daemon runme = new DaemonFactory().getDaemon(executionPath, config, rmq);
+      runme.run(modeOrPath);
     }
     catch(Exception e) {
       logger.fatal("Unrecoverable error", e);

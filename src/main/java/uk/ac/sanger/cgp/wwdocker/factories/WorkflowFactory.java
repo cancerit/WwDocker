@@ -35,6 +35,7 @@ import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
+import uk.ac.sanger.cgp.wwdocker.workflow.DEWorkflow;
 import uk.ac.sanger.cgp.wwdocker.workflow.SangerWorkflow;
 
 /**
@@ -57,6 +58,9 @@ public class WorkflowFactory {
       case "SangerPancancerCgpCnIndelSnvStr":
         logger.trace("Creating a SangerWorkflow manager");
         return new SangerWorkflow(config);
+      case "DEWrapperWorkflow":
+        logger.trace("Creating a DEWorkflow manager");
+        return new DEWorkflow(config);
       default:
         throw new RuntimeException("Workflow filename doesn't decode to a known workflow type:" + workflow);
     }

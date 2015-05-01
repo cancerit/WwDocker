@@ -200,7 +200,10 @@ public class Utils {
     try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
       for(Path item : stream) {
         File file = item.toFile();
-        if(file.isFile()) {
+        if(file.isFile() && file.canRead() && !file.isHidden()) {
+          if(!file.getName().endsWith(".ini")) {
+            continue;
+          }
           iniFiles.add(file);
         }
         

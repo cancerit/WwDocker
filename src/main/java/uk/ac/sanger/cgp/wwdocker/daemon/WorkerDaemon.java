@@ -43,7 +43,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
-import uk.ac.sanger.cgp.wwdocker.callable.Docker;
+import uk.ac.sanger.cgp.wwdocker.callable.DockerSanger;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerResources;
@@ -60,7 +60,7 @@ public class WorkerDaemon implements Daemon {
   private static final Logger logger = LogManager.getLogger();
   private static PropertiesConfiguration config;
   private static Messaging messaging;
-  private static Docker dockerThread = null;
+  private static DockerSanger dockerThread = null;
   private static ExecutorService executor = null;
   private static FutureTask<Integer> futureTask = null;
   
@@ -83,10 +83,11 @@ public class WorkerDaemon implements Daemon {
     WorkerState thisState = new WorkerState(thisJar, thisConfig);
     thisState.setStatus(HostStatus.CLEAN);
     String hostName = thisState.getResource().getHostName();
+    String qPrefix = config.getString("qPrefix");
     
     // I'm running so send a message to the CLEAN queue
-    messaging.sendMessage("wwd_CLEAN", thisState);
-    String myQueue = "wwd_".concat(hostName);
+    messaging.sendMessage(qPrefix.concat(".CLEAN"), thisState);
+    String myQueue = qPrefix.concat(".").concat(hostName);
     
     int counter = 30;
     while (true) {
@@ -97,13 +98,19 @@ public class WorkerDaemon implements Daemon {
       
       if(recievedState != null) {
         if(!recievedState.equals(thisState) && thisState.getStatus().equals(HostStatus.CLEAN)) {
-          messaging.removeFromStateQueue("wwd_" + thisState.getStatus().name(), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
           logger.fatal("Host refresh required, shutting down...");
           System.exit(0);
         }
         if(recievedState.getChangeStatusTo() != null) {
           if(recievedState.getChangeStatusTo().equals(HostStatus.KILL)) {
-            messaging.removeFromStateQueue("wwd_" + thisState.getStatus().name(), hostName);
+            messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
+            if(thisState.getStatus().equals(HostStatus.ERROR)) {
+              messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOGS"), hostName);
+            }
+            if(!thisState.getStatus().equals(HostStatus.CLEAN)) {
+              messaging.sendMessage(qPrefix.concat(".").concat("PEND"), Utils.objectToJson(thisState.getWorkflowIni()));
+            }
             logger.fatal("FORCED SHUTDOWN...");
             if(dockerThread != null) {
               Local.execCommand("docker ps | tail -n +2 | cut -d ' ' -f 1 | xargs docker kill", Config.getEnvs(config), true);
@@ -127,47 +134,50 @@ public class WorkerDaemon implements Daemon {
       if(thisState.getStatus().equals(HostStatus.CLEAN)) {
         
         // clean up any other queues that may have legacy entries
-        messaging.removeFromStateQueue("wwd_DONE", hostName);
-        messaging.removeFromStateQueue("wwd_ERROR", hostName);
-        messaging.removeFromStateQueue("wwd_ERRORLOGS", hostName);
-        messaging.removeFromStateQueue("wwd_RECEIVE", hostName);
-        messaging.removeFromStateQueue("wwd_RUNNING", hostName);
+        messaging.removeFromStateQueue(qPrefix.concat(".").concat("DONE"), hostName);
+        messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERROR"), hostName);
+        messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOGS"), hostName);
+        messaging.removeFromStateQueue(qPrefix.concat(".").concat("RECEIVE"), hostName);
+        messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName);
+        messaging.removeFromStateQueue(qPrefix.concat(".").concat("BROKEN"), hostName);
         
         //We pull data from the wwd_PEND queue
-        WorkflowIni workIni = (WorkflowIni) messaging.getMessageObject("wwd_PEND", WorkflowIni.class, 10);
+        WorkflowIni workIni = (WorkflowIni) messaging.getMessageObject(qPrefix.concat(".").concat("PEND"), WorkflowIni.class, 10);
         if(workIni == null) {
           continue;
         }
         logger.debug(thisState.toString());
         thisState.setWorkflowIni(workIni);
-        shutdownThread = attachWorkIniShutdownHook(thisState.getWorkflowIni(), messaging);
+        shutdownThread = attachWorkIniShutdownHook(thisState.getWorkflowIni(), messaging, qPrefix);
         Local.cleanDockerPath(config); // clean up the workarea
-        dockerThread = new Docker(workIni, config);
+        
+        dockerThread = new DockerSanger(workIni, config);
+        
         futureTask = new FutureTask<>(dockerThread);
         executor = Executors.newSingleThreadExecutor();
         executor.execute(futureTask);
         // this section saves having to check you've got it right
-        messaging.removeFromStateQueue("wwd_" + thisState.getStatus().name(), hostName);
+        messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
         thisState.setStatus(HostStatus.RUNNING);
-        messaging.sendMessage("wwd_" + thisState.getStatus().name(), thisState);
+        messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
       }
       else if(thisState.getStatus().equals(HostStatus.RUNNING)) {
         if(futureTask.isDone()) {
           try {
             int dockerExitCode = futureTask.get();
             //Send to queue for persistance, only on change though
-            messaging.removeFromStateQueue("wwd_" + thisState.getStatus().name(), hostName);
+            messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
             if(dockerExitCode == 0) {
               thisState.setStatus(HostStatus.DONE);
             }
             else {
               if(dockerThread.getLogArchive() != null) {
-                messaging.sendFile("wwd_ERRORLOGS", hostName, dockerThread.getLogArchive());
+                messaging.sendFile(qPrefix.concat(".").concat("ERRORLOGS"), hostName, dockerThread.getLogArchive());
               }
               thisState.setStatus(HostStatus.ERROR);
             }
             
-            messaging.sendMessage("wwd_" + thisState.getStatus().name(), thisState);
+            messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
             Runtime.getRuntime().removeShutdownHook(shutdownThread);
             logger.info("Exit code: "+ futureTask.get());
 
@@ -187,10 +197,10 @@ public class WorkerDaemon implements Daemon {
          /* if we need to handle working without GNOS access on images
             then we need to change the logic here to wait for a
             state change pushed from the control code */
-        messaging.removeFromStateQueue("wwd_" + thisState.getStatus().name(), hostName);
+        messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
         thisState.setStatus(HostStatus.CLEAN);
         thisState.setWorkflowIni(null);
-        messaging.sendMessage("wwd_" + thisState.getStatus().name(), thisState);
+        messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
       }
       else if(thisState.getStatus().equals(HostStatus.ERROR)) {
         if(counter == 30) {
@@ -206,12 +216,12 @@ public class WorkerDaemon implements Daemon {
     }
   }
   
-  private Thread attachWorkIniShutdownHook(WorkflowIni ini, Messaging messaging) {
+  private Thread attachWorkIniShutdownHook(WorkflowIni ini, Messaging messaging, String qPrefix) {
     Thread sdt = new Thread() {
       @Override
       public void run(){
         try {
-          messaging.sendMessage("wwd_PEND", Utils.objectToJson(ini));
+          messaging.sendMessage(qPrefix.concat(".").concat("PEND"), Utils.objectToJson(ini));
         }
         catch(IOException | InterruptedException e) {
           throw new RuntimeException("Error while executing shutdownHook", e);

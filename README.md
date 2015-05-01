@@ -5,13 +5,38 @@ THIS IS A WORK IN PROGRESS
 After compile the code can be run using the following:
 
 ```
-java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
+java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/default.cfg Primary
 ```
 
-This will provision all hosts listed in the file indicates by the config value 'workerCfg' defined in `config/default.cfg`.
-Once provisioned a worker daemon will be started on the host and await work.
+This will provision all hosts listed in the file indicated by the config value 'workerCfg' defined in `config/default.cfg`.
+Once provisioned a worker daemon will be started on the host and await work from the message queue `*.PEND`.
 
-More detailed documentation will be added soon.
+Usage is available when executed with no arguments following the `*.jar` element of the command (please refer to that for most up to date details):
+
+
+    The following are valid usage patterns:
+
+      ... config.cfg PRIMARY
+          - Starts the 'head' node daemon which provisions and monitors workers
+
+      ... config.cfg PRIMARY KILLALL
+        - Issues KILL message to all hosts listed in the workers.cfg file
+
+      ... config.cfg ERRORS /some/path
+        - Gets and expands logs from the *.ERRORLOG queue
+
+The worker is executed on each host automatically with ():
+
+    ... config.cfg WORKER
+
+# Message queues
+It is possible to have multiple 'primary' daemons running managing a different set of hosts (and workflows/versions) using the same message server.
+
+All that is required is to ensure that the `qPrefix` is set differently for each logical group in `config.cfg`.
+
+There are 8 core queues for each manager, these are:
+
+
 
 ----
 
