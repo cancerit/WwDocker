@@ -243,10 +243,7 @@ public class Remote {
       command = command.concat(" ").concat(param);
     }
     try {
-      int thisExitCode = execCommand(session, command);
-      if(thisExitCode != 0) {
-        exitCode = thisExitCode;
-      }
+      exitCode = execCommand(session, command);
     } catch(JSchException e) {
       throw new RuntimeException("Failure in SSH connection", e);
     }

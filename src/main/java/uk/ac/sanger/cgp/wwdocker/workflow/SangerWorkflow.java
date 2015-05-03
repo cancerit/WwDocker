@@ -141,8 +141,8 @@ public class SangerWorkflow implements Workflow {
     if (Remote.expandJre(ssh, jreDist) != 0) {
       return provisioned;
     }
-    Remote.curl(ssh, localWorkflowZip, remoteWorkflowDir);
-    if (Remote.expandWorkflow(ssh, remoteWorkflowZip, remoteSeqwareJar, remoteWorkflowDir) != 0) {
+    
+    if (Remote.curl(ssh, localWorkflowZip, remoteWorkflowDir) != 0 || Remote.expandWorkflow(ssh, remoteWorkflowZip, remoteSeqwareJar, remoteWorkflowDir) != 0) {
       return provisioned;
     }
     String workflowBase = remoteWorkflowZip.getName().replaceAll("\\.zip$", "");
