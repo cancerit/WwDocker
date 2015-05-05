@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+        <action>
+            <actionName>run</actionName>
+            <packagings>
+                <packaging>jar</packaging>
+            </packagings>
+            <goals>
+                <goal>process-classes</goal>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.args>-Xmx50m -Dlog4j.configurationFile="config/log4j.properties.xml" -classpath %classpath uk.ac.sanger.cgp.wwdocker.TestMain Primary config/default.cfg</exec.args>
+                <exec.executable>java</exec.executable>
+                <exec.workingdir>/Users/kr2/git/WwDocker</exec.workingdir>
+            </properties>
+        </action>
+        <action>
+            <actionName>debug</actionName>
+            <packagings>
+                <packaging>jar</packaging>
+            </packagings>
+            <goals>
+                <goal>process-classes</goal>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.args>-Xdebug -Xrunjdwp:transport=dt_socket,server=n,address=${jpda.address} -Xmx50m -Dlog4j.configurationFile="config/log4j.properties.xml" -classpath %classpath uk.ac.sanger.cgp.wwdocker.TestMain Primary config/default.cfg</exec.args>
+                <exec.executable>java</exec.executable>
+                <jpda.listen>true</jpda.listen>
+                <exec.workingdir>/Users/kr2/git/WwDocker</exec.workingdir>
+            </properties>
+        </action>
+        <action>
+            <actionName>profile</actionName>
+            <packagings>
+                <packaging>jar</packaging>
+            </packagings>
+            <goals>
+                <goal>process-classes</goal>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.args>-Xmx50m -Dlog4j.configurationFile="config/log4j.properties.xml" -classpath %classpath uk.ac.sanger.cgp.wwdocker.TestMain Primary config/default.cfg</exec.args>
+                <exec.executable>java</exec.executable>
+                <exec.workingdir>/Users/kr2/git/WwDocker</exec.workingdir>
+            </properties>
+        </action>
+        <action>
+            <actionName>CUSTOM-Primary</actionName>
+            <displayName>Primary</displayName>
+            <preAction>build-with-dependencies</preAction>
+            <goals>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+                
+            </goals>
+            <properties>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/Sanger.cfg Primary test</exec.args>
+                <exec.executable>java</exec.executable>
+                
+            </properties>
+        </action>
+        <action>
+            <actionName>CUSTOM-Worker</actionName>
+            <displayName>Worker</displayName>
+            <goals>
+                <goal>process-classes</goal>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/Sanger.cfg worker</exec.args>
+                <exec.executable>java</exec.executable>
+            </properties>
+        </action>
+        <action>
+            <actionName>CUSTOM-KILL</actionName>
+            <displayName>KILL</displayName>
+            <goals>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+                
+            </goals>
+            <properties>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/Sanger.cfg Primary KILLALL</exec.args>
+                <exec.executable>java</exec.executable>
+            </properties>
+        </action>
+        <action>
+            <actionName>CUSTOM-getErrors</actionName>
+            <displayName>getErrors</displayName>
+            <goals>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/Sanger.cfg ERRORS /var/tmp</exec.args>
+                <exec.executable>java</exec.executable>
+            </properties>
+        </action>
+    </actions>

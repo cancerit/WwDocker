@@ -10,3 +10,11 @@
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+
+# project specific
+/target
+/config/mycreds.cfg
+/src/main/java/uk/ac/sanger/cgp/wwdocker/TestMain.java
+/config/myfull.cfg
+/src/main/java/uk/ac/sanger/cgp/wwdocker/daemon/PrimaryDaemon1.java
+/config/gnosKeys
