@@ -5,10 +5,12 @@ THIS IS A WORK IN PROGRESS
 After compile the code can be run using the following:
 
 ```
-java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/default.cfg Primary
+java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/workflow.cfg Primary
 ```
 
-This will provision all hosts listed in the file indicated by the config value 'workerCfg' defined in `config/default.cfg`.
+(substitute the relevant workflow config file)
+
+This will provision all hosts listed in the file indicated by the config value 'workerCfg' defined in `config/workflow.cfg`.
 Once provisioned a worker daemon will be started on the host and await work from the message queue `*.PEND`.
 
 Usage is available when executed with no arguments following the `*.jar` element of the command (please refer to that for most up to date details):
@@ -25,7 +27,7 @@ Usage is available when executed with no arguments following the `*.jar` element
       ... config.cfg ERRORS /some/path
         - Gets and expands logs from the *.ERRORLOG queue
 
-The worker is executed on each host automatically with ():
+The worker is executed on each host automatically with:
 
     ... config.cfg WORKER
 
@@ -34,9 +36,53 @@ It is possible to have multiple 'primary' daemons running managing a different s
 
 All that is required is to ensure that the `qPrefix` is set differently for each logical group in `config.cfg`.
 
-There are 8 core queues for each manager, these are:
+There are 9 core queues for each manager, these are:
 
+* `*.ACTIVE`
+    * Responses from hosts to status requests are sent to this queue.
+    * Header - host=hostName
+    * Content - JSON `WorkerState.class`
+* `*.BROKEN`
+    * Hosts that fail to start are registered here, remove from workers.cfg and then re-add to retry.
+    * Header - host=hostName
+    * Content - JSON `WorkerState.class`
+* `*.CLEAN`
+    * Hosts awaiting work show here - this has no function other than to show they are available.
+    * Header - host=hostName
+    * Content - JSON `WorkerState.class`
+* `*.DONE`
+    * Stub for off-line mode - transient changes to `*.CLEAN` almost instantly, state would remain until result data retrieved.
+    * Header - host=hostName
+    * Content - JSON `WorkerState.class`
+* `*.ERROR`
+    * Hosts that encountered an error during processing register here.
+    * Header - host=hostName
+    * Content - JSON `WorkerState.class`
+* `*.ERRORLOGS`
+    * Correlates with `*.ERROR`, holds tar.gz of logs and seqware scripts (see `ERRORS` usage pattern).
+    * Header - host=hostName
+    * Content - Binary - tar.gz
+* `*.PEND`
+    * Holds the workflow ini files currently pending.
+    * Header - none
+    * Content - JSON `WorkflowIni.class`
+* `*.RECEIVE`
+    * Stub for off-line mode - Hosts undergoing data transfer for workflow would be listed here.
+    * Header - host=hostName
+    * Content - JSON `WorkerState.class`
+* `*.RUNNING`
+    * List of hosts currently running a workflow.
+    * Header - host=hostName
+    * Content - JSON `WorkerState.class`
 
+# Multiple workflows (and/or workflow versions)
+You are able to have several instances of the `PRIMARY` process running, each
+running on a different configuration set.  The important items to ensure are set correctly are:
+
+* For `config.cfg` (e.g. `Sanger.ini`) included on in the command args:
+    * `qPrefix` - this sets the queue prefix so that different workflows don't share queues
+    * `workerCfg` - this needs to point to a different list of hosts to any other running workflows
+    * `workflow` - update this to the version you want
 
 ----
 
