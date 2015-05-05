@@ -55,7 +55,7 @@
                 
             </goals>
             <properties>
-                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/default.cfg Primary test</exec.args>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/Sanger.cfg Primary test</exec.args>
                 <exec.executable>java</exec.executable>
                 
             </properties>
@@ -68,7 +68,7 @@
                 <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
             </goals>
             <properties>
-                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/default.cfg worker</exec.args>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/Sanger.cfg worker</exec.args>
                 <exec.executable>java</exec.executable>
             </properties>
         </action>
@@ -80,7 +80,7 @@
                 
             </goals>
             <properties>
-                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/default.cfg Primary KILLALL</exec.args>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/Sanger.cfg Primary KILLALL</exec.args>
                 <exec.executable>java</exec.executable>
             </properties>
         </action>
@@ -91,7 +91,7 @@
                 <goal>org.codehaus.mojo:exec-maven-plugin:1.2.1:exec</goal>
             </goals>
             <properties>
-                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/default.cfg ERRORS /var/tmp</exec.args>
+                <exec.args>-Xmx128m -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar config/Sanger.cfg ERRORS /var/tmp</exec.args>
                 <exec.executable>java</exec.executable>
             </properties>
         </action>
