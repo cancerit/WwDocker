@@ -79,8 +79,9 @@ public class PrimaryDaemon implements Daemon {
   @Override
   public void run(String mode) throws IOException, InterruptedException, ConfigurationException {
     // lots of values that will be used over and over again
+    String qPrefix = config.getString("qPrefix");
     File thisJar = Utils.thisJarFile();
-    File tmpConf = new File(System.getProperty("java.io.tmpdir") + "/remote.cfg");
+    File tmpConf = new File(System.getProperty("java.io.tmpdir") + "/" + qPrefix + ".remote.cfg");
     tmpConf.deleteOnExit(); // contains passwords so cleanup
     config.save(tmpConf.getAbsolutePath()); // done like this so includes are pulled in
     Local.chmod(tmpConf, "go-rwx");
@@ -106,7 +107,6 @@ public class PrimaryDaemon implements Daemon {
     
     // this holds md5 of this JAR and the config (which lists the workflow code to use)
     WorkerState provState = new WorkerState(thisJar, tmpConf);
-    String qPrefix = config.getString("qPrefix");
     
     while(true) {
       addWorkToPend(workManager, config);
