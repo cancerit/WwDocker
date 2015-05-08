@@ -19,3 +19,4 @@ hs_err_pid*
 /src/main/java/uk/ac/sanger/cgp/wwdocker/daemon/PrimaryDaemon1.java
 /config/gnosKeys
 /config/DKFZworkers.cfg
+.DS_Store
