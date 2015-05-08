@@ -87,6 +87,9 @@ public class WorkerDaemon implements Daemon {
     String hostName = thisState.getResource().getHostName();
     String qPrefix = config.getString("qPrefix");
     
+    // Remove from broken as I'm not anymore if I'm running
+    messaging.removeFromStateQueue(qPrefix.concat(".BROKEN"), hostName);
+    
     // I'm running so send a message to the CLEAN queue
     messaging.sendMessage(qPrefix.concat(".CLEAN"), thisState);
     String myQueue = qPrefix.concat(".").concat(hostName);

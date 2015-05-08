@@ -261,12 +261,12 @@ public class Remote {
     }
   }
   
-  public static int startWorkerDaemon(Session session, String jarName, String mode) {
+  public static int startWorkerDaemon(Session session, String jarName, String confName, String mode) {
     int exitCode = -1;
     //java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
     String command = "/opt/jre/bin/java -Xmx256m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
                       .concat(jarName)
-                      .concat(" /opt/remote.cfg Worker");
+                      .concat(" /opt/").concat(confName).concat(" Worker");
     if(mode != null) {
       command = command.concat(" ").concat(mode);
     }

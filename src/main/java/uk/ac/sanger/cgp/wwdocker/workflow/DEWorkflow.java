@@ -171,7 +171,7 @@ public class DEWorkflow implements Workflow {
      || Remote.chmodPath(ssh, "go-wrx", optDir.concat("/*"), true) != 0 // file will have passwords
      //|| Local.pushFileSetToHost(Utils.getGnosKeys(config), host, gnosDest.toString(), envs, ssh, localTmp) != 0 // GNOS keys
       || Local.pushFileSetToHost(Utils.getGnosKeys(config), host, remoteWorkflowDir, envs, ssh, localTmp) != 0 // GNOS keys
-     || Remote.startWorkerDaemon(ssh, thisJar.getName(), mode) != 0) {
+     || Remote.startWorkerDaemon(ssh, thisJar.getName(), tmpConf.getName(), mode) != 0) {
       return provisioned;
     }
     provisioned = true;
