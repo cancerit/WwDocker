@@ -40,12 +40,14 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
+import uk.ac.sanger.cgp.wwdocker.factories.WorkflowFactory;
+import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
 
 /**
  *
  * @author kr2
  */
-public class DockerSanger implements Callable<Integer> {
+public class Docker implements Callable<Integer> {
   private static final Logger logger = LogManager.getLogger();
   private Thread t;
   private String threadName;
@@ -53,12 +55,14 @@ public class DockerSanger implements Callable<Integer> {
   private File remoteIni;
   private BaseConfiguration config;
   File logArchive = null;
+  private Workflow workManager = null;
    
-  public DockerSanger(WorkflowIni iniFile, BaseConfiguration config) {
+  public Docker(WorkflowIni iniFile, BaseConfiguration config) {
     this.config = config;
     this.threadName = iniFile.getIniFile().getName();
     this.iniFile = iniFile;
     remoteIni = Paths.get(config.getString("datastoreDir"), threadName).toFile();
+    workManager = new WorkflowFactory().getWorkflow(config);
   }
 
   public Integer call() {
@@ -68,7 +72,7 @@ public class DockerSanger implements Callable<Integer> {
     try {
       FileUtils.writeStringToFile(remoteIni, iniFile.getIniContent(), null);
       
-      result = Local.runDocker(config, remoteIni);
+      result = workManager.runDocker(config, remoteIni);
       if(result != 0) {
         // we should package the results as defined by the config of this workflow type
         logArchive = packageLogs();
@@ -95,10 +99,12 @@ public class DockerSanger implements Callable<Integer> {
     }
     String command = "cd ".concat(oozieBase)
       .concat("; find generated-scripts/ -type f > ")
-      .concat(includeFile).concat(";")
-      .concat(iniFile.getLogSearchCmd())
-      .concat(">>").concat(includeFile)
-      .concat(";tar -C ").concat(oozieBase)
+      .concat(includeFile);
+    
+    for(String c : iniFile.getLogSearchCmds()) {
+      command = command.concat(";").concat(c).concat(">>").concat(includeFile);
+    }
+    command = command.concat(";tar -C ").concat(oozieBase)
       .concat(" -czf ")
       .concat(logTar.getAbsolutePath())
       .concat(" -T ").concat(includeFile);

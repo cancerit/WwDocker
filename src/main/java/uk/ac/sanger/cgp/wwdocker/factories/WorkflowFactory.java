@@ -31,6 +31,7 @@
 
 package uk.ac.sanger.cgp.wwdocker.factories;
 
+import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -46,7 +47,7 @@ public class WorkflowFactory {
   private static final String WORKFLOW_PREFIX = "Workflow_Bundle_";
   private static final Logger logger = LogManager.getLogger();
   
-  public Workflow getWorkflow(PropertiesConfiguration config) {
+  public Workflow getWorkflow(BaseConfiguration config) {
     String workflowFile = config.getString("workflow");
     int startPos = workflowFile.lastIndexOf(WORKFLOW_PREFIX) + WORKFLOW_PREFIX.length();
     logger.trace(workflowFile);

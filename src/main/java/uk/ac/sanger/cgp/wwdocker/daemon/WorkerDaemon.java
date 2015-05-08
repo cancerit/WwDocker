@@ -43,13 +43,15 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
-import uk.ac.sanger.cgp.wwdocker.callable.DockerSanger;
+import uk.ac.sanger.cgp.wwdocker.callable.Docker;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerResources;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
 import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
+import uk.ac.sanger.cgp.wwdocker.factories.WorkflowFactory;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Daemon;
+import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
 import uk.ac.sanger.cgp.wwdocker.messages.Messaging;
 
 /**
@@ -60,7 +62,7 @@ public class WorkerDaemon implements Daemon {
   private static final Logger logger = LogManager.getLogger();
   private static PropertiesConfiguration config;
   private static Messaging messaging;
-  private static DockerSanger dockerThread = null;
+  private static Docker dockerThread = null;
   private static ExecutorService executor = null;
   private static FutureTask<Integer> futureTask = null;
   
@@ -85,12 +87,17 @@ public class WorkerDaemon implements Daemon {
     String hostName = thisState.getResource().getHostName();
     String qPrefix = config.getString("qPrefix");
     
+    // Remove from broken as I'm not anymore if I'm running
+    messaging.removeFromStateQueue(qPrefix.concat(".BROKEN"), hostName);
+    
     // I'm running so send a message to the CLEAN queue
     messaging.sendMessage(qPrefix.concat(".CLEAN"), thisState);
     String myQueue = qPrefix.concat(".").concat(hostName);
     
     int counter = 30;
+    Workflow workflowImp = new WorkflowFactory().getWorkflow(config);
     while (true) {
+      Thread.sleep(500); // don't eat cpu
       //Only control messages will be sent directly to the host now
       
       WorkerState recievedState = (WorkerState) messaging.getWorkerState(myQueue, 10);
@@ -109,7 +116,9 @@ public class WorkerDaemon implements Daemon {
               messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOGS"), hostName);
             }
             if(!thisState.getStatus().equals(HostStatus.CLEAN)) {
-              messaging.sendMessage(qPrefix.concat(".").concat("PEND"), Utils.objectToJson(thisState.getWorkflowIni()));
+              if(shutdownThread == null) {
+                messaging.sendMessage(qPrefix.concat(".").concat("PEND"), Utils.objectToJson(thisState.getWorkflowIni()));
+              }
             }
             logger.fatal("FORCED SHUTDOWN...");
             if(dockerThread != null) {
@@ -149,9 +158,9 @@ public class WorkerDaemon implements Daemon {
         logger.debug(thisState.toString());
         thisState.setWorkflowIni(workIni);
         shutdownThread = attachWorkIniShutdownHook(thisState.getWorkflowIni(), messaging, qPrefix);
-        Local.cleanDockerPath(config); // clean up the workarea
+        workflowImp.cleanDockerPath(config); // clean up the workarea
         
-        dockerThread = new DockerSanger(workIni, config);
+        dockerThread = new Docker(workIni, config);
         
         futureTask = new FutureTask<>(dockerThread);
         executor = Executors.newSingleThreadExecutor();
@@ -179,6 +188,7 @@ public class WorkerDaemon implements Daemon {
             
             messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
             Runtime.getRuntime().removeShutdownHook(shutdownThread);
+            shutdownThread = null;
             logger.info("Exit code: "+ futureTask.get());
 
             executor.shutdown();
@@ -203,12 +213,12 @@ public class WorkerDaemon implements Daemon {
         messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
       }
       else if(thisState.getStatus().equals(HostStatus.ERROR)) {
-        if(counter == 30) {
+        if(counter == 60) {
           logger.debug("I'm set to error, waiting for directions...");
           counter = 0;
         }
         counter++;
-        Thread.sleep(1000);
+        Thread.sleep(500); // sleep at top too
       }
       else {
         throw new RuntimeException("Don't know what to do yet");

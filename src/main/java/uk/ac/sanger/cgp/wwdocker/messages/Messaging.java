@@ -226,6 +226,8 @@ public class Messaging {
   
   public boolean queryGaveResponse(String queryQueue, String responseQueue, String query, long wait) throws IOException, InterruptedException {
     boolean response = false;
+    // clean up queue we send to first
+    getMessageStrings(queryQueue, 100);
     this.sendMessage(queryQueue, query);
     if(getMessageString(responseQueue, wait) != null) {
       response = true;

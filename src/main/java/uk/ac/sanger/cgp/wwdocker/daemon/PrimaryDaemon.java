@@ -79,8 +79,9 @@ public class PrimaryDaemon implements Daemon {
   @Override
   public void run(String mode) throws IOException, InterruptedException, ConfigurationException {
     // lots of values that will be used over and over again
+    String qPrefix = config.getString("qPrefix");
     File thisJar = Utils.thisJarFile();
-    File tmpConf = new File(System.getProperty("java.io.tmpdir") + "/remote.cfg");
+    File tmpConf = new File(System.getProperty("java.io.tmpdir") + "/" + qPrefix + ".remote.cfg");
     tmpConf.deleteOnExit(); // contains passwords so cleanup
     config.save(tmpConf.getAbsolutePath()); // done like this so includes are pulled in
     Local.chmod(tmpConf, "go-rwx");
@@ -106,7 +107,6 @@ public class PrimaryDaemon implements Daemon {
     
     // this holds md5 of this JAR and the config (which lists the workflow code to use)
     WorkerState provState = new WorkerState(thisJar, tmpConf);
-    String qPrefix = config.getString("qPrefix");
     
     while(true) {
       addWorkToPend(workManager, config);
@@ -130,7 +130,7 @@ public class PrimaryDaemon implements Daemon {
         provState.setChangeStatusTo(HostStatus.CHECKIN);
         provState.setReplyToQueue(qPrefix.concat(".ACTIVE"));
         if(e.getValue().equals("TO_PROVISION")) {
-          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 3000)) {
+          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 10000)) {
             logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
             if(!workManager.provisionHost(host, PrimaryDaemon.config, thisJar, tmpConf, mode, envs)) {
               hosts.replace(host, "BROKEN");
@@ -144,7 +144,7 @@ public class PrimaryDaemon implements Daemon {
         }
       }
       // we need a little sleep here or we'll kill the queues
-      Thread.sleep(10000);
+      Thread.sleep(1000);
     }
   }
   
@@ -198,7 +198,7 @@ public class PrimaryDaemon implements Daemon {
     for(File iniFile : iniFiles) {
       if(!allInis.containsKey(iniFile.getAbsolutePath())) {
         WorkflowIni newIni = new WorkflowIni(iniFile);
-        newIni.setLogSearchCmd(workManager.getFindLogsCmd());
+        newIni.setLogSearchCmd(workManager.getFindLogsCmds());
         allInis.put(iniFile.getAbsolutePath(), newIni);
       }
     }

@@ -64,7 +64,7 @@ public class Utils {
     return logOutput(stdout, Level.INFO);
   }
   
-  protected static String logOutput(String stdout, Level type) {
+  public static String logOutput(String stdout, Level type) {
     String remainder = null;
     String[] lines = stdout.split(System.lineSeparator());
     if(! stdout.endsWith(System.lineSeparator())) {

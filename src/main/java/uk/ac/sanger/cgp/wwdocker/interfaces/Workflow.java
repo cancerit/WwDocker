@@ -36,9 +36,16 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.io.IOUtils;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import uk.ac.sanger.cgp.wwdocker.Config;
+import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
 
 /**
@@ -46,10 +53,47 @@ import uk.ac.sanger.cgp.wwdocker.enums.HostStatus;
  * @author kr2
  */
 public interface Workflow {
+  
+  static final Logger logger = LogManager.getLogger();
+  
   List filesToPush(File iniFile);
   List filesToPull(File iniFile);
-  String getFindLogsCmd();
+  String[] getFindLogsCmds();
+  String baseDockerCommand(BaseConfiguration config, String extras);
+  int runDocker(BaseConfiguration config, File iniFile);
   boolean provisionHost(String host, BaseConfiguration config, File thisJar, File tmpConf, String mode, Map<String,String> envs) throws InterruptedException;
+  
+  default int cleanDockerPath(BaseConfiguration config) {
+    String command = baseDockerCommand(config, null);
+    command = command.concat(" /bin/sh -c");
+    List<String> args = new ArrayList(Arrays.asList(command.split(" ")));
+    args.add("rm -rf /datastore/oozie-*");
+    
+    ProcessBuilder pb = new ProcessBuilder(args);
+
+    Map<String, String> pEnv = pb.environment();
+    pEnv.putAll(Config.getEnvs(config));
+    logger.info("Executing: " + String.join(" ", args));
+    int exitCode = -1;
+    Process p = null;
+    try {
+      p = pb.start();
+      String progErr = IOUtils.toString(p.getErrorStream());
+      String progOut = IOUtils.toString(p.getInputStream());
+      exitCode = p.waitFor();
+      Utils.logOutput(progErr, Level.ERROR);
+      Utils.logOutput(progOut, Level.TRACE);
+    } catch(InterruptedException | IOException e) {
+      logger.error(e.getMessage(), e);
+    }
+    finally {
+      if(p != null) {
+        p.destroy();
+        exitCode = p.exitValue();
+      }
+    }
+    return exitCode;
+  }
   
   default String iniPathByState(BaseConfiguration config, String iniFile, HostStatus hs) {
     File tmp = new File(iniFile);
