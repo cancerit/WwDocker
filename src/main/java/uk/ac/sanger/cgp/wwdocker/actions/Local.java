@@ -47,6 +47,7 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
+import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
 
 /**
  *
@@ -54,72 +55,6 @@ import uk.ac.sanger.cgp.wwdocker.Config;
  */
 public class Local {
   private static final Logger logger = LogManager.getLogger();
-  
-  private static String baseDockerCommand(BaseConfiguration config) {
-    File workflow = Paths.get(config.getString("workflowDir"), config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", "")).toFile();
-    
-    // probably want to clean the data store before we write the ini file
-    //docker run --rm -h master -v /cgp/datastore:/datastore -v /cgp/workflows/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow -i seqware/seqware_whitestar_pancancer rm -rf /datastore/
-    
-    String command = "docker run --rm -h master";
-    command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
-    command = command.concat(" -v ").concat(workflow.getAbsolutePath()).concat(":/workflow");
-    command = command.concat(" seqware/seqware_whitestar_pancancer");
-    return command;
-  }
-  
-  public static int runDocker(BaseConfiguration config, File iniFile) {
-    /*
-     * docker run --rm -h master -t
-     * -v /cgp/datastore:/datastore
-     * -v /cgp/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow
-     * -i seqware/seqware_whitestar_pancancer
-     * seqware bundle launch
-     * --no-metadata
-     * --engine whitestar-parallel
-     * --dir /workflow
-     * --ini /datastore/testRun.ini
-     */
-    
-    String command = baseDockerCommand(config);
-    command = command.concat(" seqware bundle launch --no-metadata --engine whitestar-parallel");
-    command = command.concat(" --dir /workflow");
-    command = command.concat(" --ini /datastore/").concat(iniFile.getName());
-    // this may need to be more itelligent than just the exit code
-    return execCommand(command, Config.getEnvs(config), false);
-  }
-  
-  public static int cleanDockerPath(BaseConfiguration config) {
-    String command = baseDockerCommand(config);
-    command = command.concat(" /bin/sh -c");
-    List<String> args = new ArrayList(Arrays.asList(command.split(" ")));
-    args.add("rm -rf /datastore/oozie-*");
-    
-    ProcessBuilder pb = new ProcessBuilder(args);
-
-    Map<String, String> pEnv = pb.environment();
-    pEnv.putAll(Config.getEnvs(config));
-    logger.info("Executing: " + String.join(" ", args));
-    int exitCode = -1;
-    Process p = null;
-    try {
-      p = pb.start();
-      String progErr = IOUtils.toString(p.getErrorStream());
-      String progOut = IOUtils.toString(p.getInputStream());
-      exitCode = p.waitFor();
-      Utils.logOutput(progErr, Level.ERROR);
-      Utils.logOutput(progOut, Level.TRACE);
-    } catch(InterruptedException | IOException e) {
-      logger.error(e.getMessage(), e);
-    }
-    finally {
-      if(p != null) {
-        p.destroy();
-        exitCode = p.exitValue();
-      }
-    }
-    return exitCode;
-  }
   
   public static int pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
     int exitCode = 0;

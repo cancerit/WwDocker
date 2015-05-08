@@ -130,7 +130,7 @@ public class PrimaryDaemon implements Daemon {
         provState.setChangeStatusTo(HostStatus.CHECKIN);
         provState.setReplyToQueue(qPrefix.concat(".ACTIVE"));
         if(e.getValue().equals("TO_PROVISION")) {
-          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 3000)) {
+          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 10000)) {
             logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
             if(!workManager.provisionHost(host, PrimaryDaemon.config, thisJar, tmpConf, mode, envs)) {
               hosts.replace(host, "BROKEN");
@@ -144,7 +144,7 @@ public class PrimaryDaemon implements Daemon {
         }
       }
       // we need a little sleep here or we'll kill the queues
-      Thread.sleep(10000);
+      Thread.sleep(1000);
     }
   }
   
@@ -198,7 +198,7 @@ public class PrimaryDaemon implements Daemon {
     for(File iniFile : iniFiles) {
       if(!allInis.containsKey(iniFile.getAbsolutePath())) {
         WorkflowIni newIni = new WorkflowIni(iniFile);
-        newIni.setLogSearchCmd(workManager.getFindLogsCmd());
+        newIni.setLogSearchCmd(workManager.getFindLogsCmds());
         allInis.put(iniFile.getAbsolutePath(), newIni);
       }
     }

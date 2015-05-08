@@ -131,9 +131,11 @@ public class Remote {
     int exitCode = -1;
     try {
       for(String i : images) {
-        File f = new File(i);
-        String destFile = Paths.get(workspace,f.getName()).toFile().getPath();
-        Remote.curl(session, i, destFile);
+        String destFile = curl(session, i, workspace);
+        if(destFile == null) {
+          logger.error("Failed to retrieve file via curl: "+ i);
+          return 1;
+        }
         String command = "docker load -i " + destFile;
         exitCode = execCommand(session, command);
         if(exitCode != 0) {
@@ -262,7 +264,7 @@ public class Remote {
   public static int startWorkerDaemon(Session session, String jarName, String mode) {
     int exitCode = -1;
     //java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
-    String command = "/opt/jre/bin/java -Xmx128m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
+    String command = "/opt/jre/bin/java -Xmx256m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
                       .concat(jarName)
                       .concat(" /opt/remote.cfg Worker");
     if(mode != null) {
@@ -277,8 +279,8 @@ public class Remote {
     return exitCode;
   }
   
-  public static int curl(Session session, String source, String destPath) {
-    int exitCode = -1;
+  public static String curl(Session session, String source, String destPath) {
+    String finalPath = null;
     try {
       String[] elements = source.split("/");
       if(!destPath.endsWith(System.getProperty("file.separator"))) {
@@ -290,12 +292,14 @@ public class Remote {
                             .concat(" -z ").concat(destPath)
                             .concat(" -o ").concat(destPath)
                             .concat(" ").concat(source);
-      exitCode = execCommand(session, getCommand);
+      if(execCommand(session, getCommand) == 0){
+        finalPath = destPath;
+      }
     }
     catch(JSchException e) {
       throw new RuntimeException("Failure in SSH connection", e);
     }
-    return exitCode;
+    return finalPath;
   }
   
   private static int execCommand(Session session, String command) throws JSchException {

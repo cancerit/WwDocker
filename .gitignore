@@ -18,3 +18,4 @@ hs_err_pid*
 /config/myfull.cfg
 /src/main/java/uk/ac/sanger/cgp/wwdocker/daemon/PrimaryDaemon1.java
 /config/gnosKeys
+/config/DKFZworkers.cfg

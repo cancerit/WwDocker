@@ -39,11 +39,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
-import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
+import static uk.ac.sanger.cgp.wwdocker.actions.Local.execCommand;
 import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
@@ -54,16 +54,16 @@ import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
  */
 public class DEWorkflow implements Workflow {
   private static final Logger logger = LogManager.getLogger();
-  PropertiesConfiguration config;
+  BaseConfiguration config;
   
-  private static final String logSearchCmd = "find seqware-results/ -type f | grep -F '/logs/'";
+  private static final String[] logSearchCmd = {"find seqware-results/ -type f | grep -F '/logs/'"};
   
-  public DEWorkflow(PropertiesConfiguration config) {
+  public DEWorkflow(BaseConfiguration config) {
     this.config = config;
   }
   
   @Override
-  public String getFindLogsCmd() {
+  public String[] getFindLogsCmds() {
     return logSearchCmd;
   }
   
@@ -79,6 +79,48 @@ public class DEWorkflow implements Workflow {
     List files = new ArrayList();
     //@TODO
     return files;
+  }
+  
+    @Override
+  public String baseDockerCommand(BaseConfiguration config, String extras) {
+    //File workflow = Paths.get(config.getString("workflowDir"), config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", "")).toFile();
+    
+    // probably want to clean the data store before we write the ini file
+    //docker run --rm -h master -v /cgp/datastore:/datastore -v /cgp/workflows/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow -i seqware/seqware_whitestar_pancancer rm -rf /datastore/
+    
+    String command = "docker run --rm -h master";
+    command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
+    command = command.concat(" -v ").concat(config.getString("workflowDir")).concat(":/workflow");
+    if(extras != null) {
+      command = command.concat(extras);
+    }
+    command = command.concat(" seqware/seqware_whitestar_pancancer");
+    return command;
+  }
+  
+  @Override
+  public int runDocker(BaseConfiguration config, File iniFile) {
+    /*
+     * docker run --rm -h master -t
+     * -v /cgp/datastore:/datastore
+     * -v /cgp/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow
+     * -i seqware/seqware_whitestar_pancancer
+     * seqware bundle launch
+     * --no-metadata
+     * --engine whitestar-parallel
+     * --dir /workflow
+     * --ini /datastore/testRun.ini
+     */
+    
+    String extras = " -v /var/run/docker.sock:/var/run/docker.sock";
+    extras = extras.concat(" -v /datastore/").concat(iniFile.getName()).concat(":/workflow.ini");
+    // don't add the pem key here, just standardise in the ini file template
+    
+    String command = baseDockerCommand(config, extras);
+    command = command.concat(" seqware bundle launch --no-metadata --engine whitestar-parallel");
+    command = command.concat(" --dir /workflow/").concat(config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", ""));
+    // this may need to be more itelligent than just the exit code
+    return execCommand(command, Config.getEnvs(config), false);
   }
 
   @Override
@@ -104,12 +146,12 @@ public class DEWorkflow implements Workflow {
     Remote.cleanFiles(ssh, new String[]{config.getString("log4-delete")});
     
     Remote.cleanupOldImages(ssh); // incase lots of stale ones are already present
-    if (Remote.dockerPull(ssh, pullDockerImages) != 0 || Remote.dockerLoad(ssh, curlDockerImages, optDir) != 0) {
+    if (Remote.dockerPull(ssh, pullDockerImages) != 0 || Remote.dockerLoad(ssh, curlDockerImages, remoteWorkflowDir) != 0) {
       return provisioned;
     }
     Remote.cleanupOldImages(ssh); // incase lots of stale ones are already present
     
-    if(Remote.curl(ssh, localSeqwareJar, remoteWorkflowDir) != 0) {
+    if(Remote.curl(ssh, localSeqwareJar, remoteWorkflowDir) == null) {
       return provisioned;
     }
     
@@ -122,12 +164,13 @@ public class DEWorkflow implements Workflow {
       return provisioned;
     }
     String workflowBase = remoteWorkflowZip.getName().replaceAll("\\.zip$", "");
-    Path gnosDest = Paths.get(remoteWorkflowDir, workflowBase);
+    //Path gnosDest = Paths.get(remoteWorkflowDir, workflowBase);
     if (Local.pushToHost(thisJar.getAbsolutePath(), host, optDir, envs, ssh, localTmp) != 0 // this jar file
      || Local.pushToHost(workerLog, host, optDir, envs, ssh, localTmp) != 0 // worker log config
      || Local.pushToHost(tmpConf.getAbsolutePath(), host, optDir, envs, ssh, localTmp) != 0 // config file
      || Remote.chmodPath(ssh, "go-wrx", optDir.concat("/*"), true) != 0 // file will have passwords
-     || Local.pushFileSetToHost(Utils.getGnosKeys(config), host, gnosDest.toString(), envs, ssh, localTmp) != 0 // GNOS keys
+     //|| Local.pushFileSetToHost(Utils.getGnosKeys(config), host, gnosDest.toString(), envs, ssh, localTmp) != 0 // GNOS keys
+      || Local.pushFileSetToHost(Utils.getGnosKeys(config), host, remoteWorkflowDir, envs, ssh, localTmp) != 0 // GNOS keys
      || Remote.startWorkerDaemon(ssh, thisJar.getName(), mode) != 0) {
       return provisioned;
     }

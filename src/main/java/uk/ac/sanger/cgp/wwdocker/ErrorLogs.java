@@ -32,6 +32,7 @@ package uk.ac.sanger.cgp.wwdocker;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -51,7 +52,12 @@ public class ErrorLogs {
   public static void getLog(PropertiesConfiguration config, Messaging messaging, String outBase) throws IOException {
     List<File> logSets = null;
     try {
-      logSets = messaging.getFiles(config.getString("qPrefix").concat(".ERRORLOGS"), Paths.get(outBase), false);
+      Path basePath = Paths.get(outBase);
+      File baseLoc = basePath.toFile();
+      if(!baseLoc.exists()) {
+        baseLoc.mkdirs();
+      }
+      logSets = messaging.getFiles(config.getString("qPrefix").concat(".ERRORLOGS"), basePath, false);
     } catch(IOException | InterruptedException e) {
       logger.fatal(e.getMessage(), e);
       System.exit(1);
