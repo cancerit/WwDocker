@@ -189,7 +189,7 @@ public class PrimaryDaemon implements Daemon {
     
     // get all of the existing iniFiles so we can generate a uniq list
     String qPrefix = config.getString("qPrefix");
-    List<String> existing = messaging.getMessageStrings(qPrefix.concat(".PEND"), -1);
+    List<String> existing = messaging.getMessageStrings(qPrefix.concat(".PEND"), 500);
     Map<String, WorkflowIni> allInis= new HashMap();
     for (String m : existing) {
       WorkflowIni iniFile = (WorkflowIni) Utils.jsonToObject(m, WorkflowIni.class);
