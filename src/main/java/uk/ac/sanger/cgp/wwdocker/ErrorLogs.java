@@ -73,10 +73,8 @@ public class ErrorLogs {
         d.mkdirs();
         String command = "tar -C ".concat(d.getAbsolutePath()).concat(" -zxf ").concat(f.getAbsolutePath());
         Local.execCommand(command);
+        f.delete();
       }
     }
-    
-    System.exit(0);
   }
-    
 }

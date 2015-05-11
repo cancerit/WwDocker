@@ -77,10 +77,11 @@ public class Control {
           System.exit(1);
         }
         ErrorLogs.getLog(config, rmq, modeOrPath);
-        System.exit(0);
       }
-      Daemon runme = new DaemonFactory().getDaemon(executionPath, config, rmq);
-      runme.run(modeOrPath);
+      else {
+        Daemon runme = new DaemonFactory().getDaemon(executionPath, config, rmq);
+        runme.run(modeOrPath);
+      }
     }
     catch(Exception e) {
       logger.fatal("Unrecoverable error", e);

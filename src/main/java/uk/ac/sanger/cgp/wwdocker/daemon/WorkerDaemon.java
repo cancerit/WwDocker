@@ -178,6 +178,7 @@ public class WorkerDaemon implements Daemon {
             messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
             if(dockerExitCode == 0) {
               thisState.setStatus(HostStatus.DONE);
+              messaging.sendMessage(qPrefix.concat(".").concat("UPLOADED"), thisState.getWorkflowIni());
             }
             else {
               if(dockerThread.getLogArchive() != null) {
