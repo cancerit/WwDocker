@@ -78,14 +78,15 @@ public class WorkerDaemon implements Daemon {
     
     Thread shutdownThread = null;
     
-    File thisConfig = new File("/opt/remote.cfg");
+    String qPrefix = config.getString("qPrefix");
+    
+    File thisConfig = new File("/opt/"+ qPrefix + ".remote.cfg");
     File thisJar = Utils.thisJarFile();
     
     // build a local WorkerState
     WorkerState thisState = new WorkerState(thisJar, thisConfig);
     thisState.setStatus(HostStatus.CLEAN);
     String hostName = thisState.getResource().getHostName();
-    String qPrefix = config.getString("qPrefix");
     
     // Remove from broken as I'm not anymore if I'm running
     messaging.removeFromStateQueue(qPrefix.concat(".BROKEN"), hostName);
