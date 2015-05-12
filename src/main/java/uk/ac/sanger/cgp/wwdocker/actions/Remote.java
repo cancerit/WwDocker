@@ -98,6 +98,7 @@ public class Remote {
       jsch.setKnownHosts(userKnownHosts);
       jsch.addIdentity(privateKeyFile().getAbsolutePath());
       Session thisSess=jsch.getSession(config.getString("ssh_user"), host, 22);
+      thisSess.setServerAliveInterval(1000);
       thisSess.setPassword(config.getString("ssh_pw"));
       session = thisSess;
     }
