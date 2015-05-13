@@ -33,12 +33,16 @@ package uk.ac.sanger.cgp.wwdocker.workflow;
 
 import com.jcraft.jsch.Session;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.io.IOUtils;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
@@ -47,6 +51,7 @@ import static uk.ac.sanger.cgp.wwdocker.actions.Local.execCommand;
 import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
+import static uk.ac.sanger.cgp.wwdocker.interfaces.Workflow.logger;
 
 /**
  *
@@ -89,7 +94,8 @@ public class DEWorkflow implements Workflow {
     //docker run --rm -h master -v /cgp/datastore:/datastore -v /cgp/workflows/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow -i seqware/seqware_whitestar_pancancer rm -rf /datastore/
     
     String command = "docker run --rm -h master";
-    command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
+    // this is an oddity of the DKFZ version to ensure that paths are handled correctly in the inner docker call
+    command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":").concat(config.getString("datastoreDir"));
     command = command.concat(" -v ").concat(config.getString("workflowDir")).concat(":/workflow");
     if(extras != null) {
       command = command.concat(extras);
@@ -113,20 +119,23 @@ public class DEWorkflow implements Workflow {
      */
     
     String extras = " -v /var/run/docker.sock:/var/run/docker.sock";
-    extras = extras.concat(" -v /datastore/").concat(iniFile.getName()).concat(":/workflow.ini");
+    extras = extras.concat(" -v ").concat(config.getString("datastoreDir")).concat("/").concat(iniFile.getName()).concat(":/workflow.ini");
     // don't add the pem key here, just standardise in the ini file template
     
     String command = baseDockerCommand(config, extras);
-    command = command.concat(" seqware bundle launch --no-metadata --engine whitestar-parallel");
+    command = command.concat(" bash -c \"sed -i 's|/datastore|" + config.getString("datastoreDir") + "|g' /home/seqware/.seqware/settings ; ");
+    command = command.concat(" seqware bundle launch --no-metadata --engine whitestar");
     command = command.concat(" --dir /workflow/").concat(config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", ""));
+    command = command.concat(" --ini /workflow.ini");
+    command = command.concat("\""); // close quotes on bash command
+    
     // this may need to be more itelligent than just the exit code
-    return execCommand(command, Config.getEnvs(config), false);
+    return execCommand(command, Config.getEnvs(config), true);
   }
 
   @Override
   public boolean provisionHost(String host, BaseConfiguration config, File thisJar, File tmpConf, String mode, Map<String, String> envs) throws InterruptedException {
     boolean provisioned = false;
-    String[] makePaths = config.getStringArray("makePaths");
     String remoteWorkflowDir = config.getString("workflowDir");
     String localSeqwareJar = config.getString("seqware");
     String localWorkflowZip = config.getString("workflow");
@@ -139,10 +148,15 @@ public class DEWorkflow implements Workflow {
     String workerLog = config.getString("log4-worker");
     File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
     
+    List<String> createPaths = new ArrayList();
+    createPaths.add("/opt");
+    createPaths.add(remoteWorkflowDir);
+    createPaths.add(config.getString("datastoreDir"));
+    
     Session ssh = Remote.getSession(config, host);
     
-    Remote.createPaths(ssh, makePaths);
-    Remote.chmodPaths(ssh, "a+wrx", makePaths, true);
+    Remote.createPaths(ssh, createPaths);
+    Remote.chmodPaths(ssh, "a+wrx", createPaths, true);
     Remote.cleanFiles(ssh, new String[]{config.getString("log4-delete")});
     
     Remote.cleanupOldImages(ssh); // incase lots of stale ones are already present
@@ -169,13 +183,50 @@ public class DEWorkflow implements Workflow {
      || Local.pushToHost(workerLog, host, optDir, envs, ssh, localTmp) != 0 // worker log config
      || Local.pushToHost(tmpConf.getAbsolutePath(), host, optDir, envs, ssh, localTmp) != 0 // config file
      || Remote.chmodPath(ssh, "go-wrx", optDir.concat("/*"), true) != 0 // file will have passwords
-     //|| Local.pushFileSetToHost(Utils.getGnosKeys(config), host, gnosDest.toString(), envs, ssh, localTmp) != 0 // GNOS keys
       || Local.pushFileSetToHost(Utils.getGnosKeys(config), host, remoteWorkflowDir, envs, ssh, localTmp) != 0 // GNOS keys
      || Remote.startWorkerDaemon(ssh, thisJar.getName(), tmpConf.getName(), mode) != 0) {
       return provisioned;
     }
     provisioned = true;
     return provisioned;
+  }
+  
+  @Override
+  public int cleanDockerPath(BaseConfiguration config) {
+    String command = baseDockerCommand(config, " -v /var/run/docker.sock:/var/run/docker.sock");
+    String innerDocker = "docker run --rm -h master -v "+ config.getString("datastoreDir") +":"+ config.getString("datastoreDir") +" seqware/pancancer_upload_download /bin/sh -c 'rm -rf "+config.getString("datastoreDir")+"/oozie-*'";
+    
+    String fullCommand = command.concat(" ").concat(innerDocker);
+    
+    List <String> args = new ArrayList();
+    args.add("/bin/bash");
+    args.add("-c");
+    args.add(fullCommand);
+    
+    ProcessBuilder pb = new ProcessBuilder(args);
+
+    Map<String, String> pEnv = pb.environment();
+    pEnv.putAll(Config.getEnvs(config));
+    logger.info("Executing: " + String.join(" ", args));
+    int exitCode = -1;
+    Process p = null;
+    try {
+      p = pb.start();
+      String progErr = IOUtils.toString(p.getErrorStream());
+      String progOut = IOUtils.toString(p.getInputStream());
+      exitCode = p.waitFor();
+      Utils.logOutput(progErr, Level.ERROR);
+      Utils.logOutput(progOut, Level.TRACE);
+    } catch(InterruptedException | IOException e) {
+      logger.error(e.getMessage(), e);
+    }
+    finally {
+      if(p != null) {
+        p.destroy();
+        exitCode = p.exitValue();
+      }
+    }
+    return exitCode;
   }
   
 }

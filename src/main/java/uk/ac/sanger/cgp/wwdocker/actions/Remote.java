@@ -41,7 +41,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Paths;
+import java.util.List;
 import java.util.Properties;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
@@ -217,6 +217,11 @@ public class Remote {
     return paramExec(session, command);
   }
   
+  public static int createPaths(Session session, List<String> paths) {
+    String[] array = paths.toArray(new String[paths.size()]);
+    return createPaths(session, array);
+  }
+  
   public static int createPaths(Session session, String[] paths) {
     String command = "mkdir -p";
     return paramExec(session, command, paths);
@@ -225,6 +230,11 @@ public class Remote {
   public static int chmodPath(Session session, String mode, String path, boolean recursive) {
     String[] paths = {path};
     return chmodPaths(session, mode, paths, recursive);
+  }
+  
+  public static int chmodPaths(Session session, String mode, List<String> paths, boolean recursive) {
+    String[] array = paths.toArray(new String[paths.size()]);
+    return chmodPaths(session, mode, array, recursive);
   }
   
   public static int chmodPaths(Session session, String mode, String[] paths, boolean recursive) {

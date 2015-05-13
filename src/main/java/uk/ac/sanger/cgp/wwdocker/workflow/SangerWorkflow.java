@@ -148,7 +148,6 @@ public class SangerWorkflow implements Workflow {
   @Override
   public boolean provisionHost(String host, BaseConfiguration config, File thisJar, File tmpConf, String mode, Map<String, String> envs) throws InterruptedException {
     boolean provisioned = false;
-    String[] makePaths = config.getStringArray("makePaths");
     String remoteWorkflowDir = config.getString("workflowDir");
     String localSeqwareJar = config.getString("seqware");
     String localWorkflowZip = config.getString("workflow");
@@ -160,10 +159,15 @@ public class SangerWorkflow implements Workflow {
     String workerLog = config.getString("log4-worker");
     File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
     
+    List<String> createPaths = new ArrayList();
+    createPaths.add("/opt");
+    createPaths.add(remoteWorkflowDir);
+    createPaths.add(config.getString("datastoreDir"));
+    
     Session ssh = Remote.getSession(config, host);
     
-    Remote.createPaths(ssh, makePaths);
-    Remote.chmodPaths(ssh, "a+wrx", makePaths, true);
+    Remote.createPaths(ssh, createPaths);
+    Remote.chmodPaths(ssh, "a+wrx", createPaths, true);
     Remote.cleanFiles(ssh, new String[]{config.getString("log4-delete")});
     
     if (Remote.dockerPull(ssh, pullDockerImages) != 0) {

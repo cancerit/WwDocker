@@ -67,7 +67,7 @@ public interface Workflow {
     String command = baseDockerCommand(config, null);
     command = command.concat(" /bin/sh -c");
     List<String> args = new ArrayList(Arrays.asList(command.split(" ")));
-    args.add("rm -rf /datastore/oozie-*");
+    args.add("'rm -rf /datastore/oozie-*'");
     
     ProcessBuilder pb = new ProcessBuilder(args);
 
