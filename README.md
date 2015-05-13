@@ -46,23 +46,23 @@ In a production environment the values should be entered directly into the confi
 (please note the complete config is propagated to each host, permissions are set appropriately to protect content).
 
 ### SSH config
-* ssh_user - user with appropriate access to login to all hosts listed in the file indicated in `workerCfg`
-* ssh_pw - associated password
+* `ssh_user` - user with appropriate access to login to all hosts listed in the file indicated in `workerCfg`
+* `ssh_pw` - associated password
 
 ### RabbitMQ config
 These parameters are essential for the use of the messaging service
 
-* rabbit_host - address of the rabbitMQ server
-* rabbit_port - port to use
-* rabbit_user - ensure an account for the user has been specified, ability to create queues required (defaults)
-* rabbit_pw - password for rabbit_user account
+* `rabbit_host` - address of the rabbitMQ server
+* `rabbit_port` - port to use
+* `rabbit_user` - ensure an account for the user has been specified, ability to create queues required (defaults)
+* `rabbit_pw` - password for rabbit_user account
 
 ### proxies
 Where applicable please configure proxies using these parameters in the standard format.  Comment individual elements if not needed.
 
-* http_proxy
-* https_proxy
-* no_proxy
+* `http_proxy`
+* `https_proxy`
+* `no_proxy`
 
 ### image paths
 These describe where you are able to write data to on your system.  Most of the workflows
