@@ -193,13 +193,13 @@ public class PrimaryDaemon implements Daemon {
     Map<String, WorkflowIni> allInis= new HashMap();
     for (String m : existing) {
       WorkflowIni iniFile = (WorkflowIni) Utils.jsonToObject(m, WorkflowIni.class);
-      allInis.put(iniFile.getIniFile().getAbsolutePath(), iniFile);
+      allInis.put(iniFile.getIniFile().getName(), iniFile);
     }
     for(File iniFile : iniFiles) {
-      if(!allInis.containsKey(iniFile.getAbsolutePath())) {
+      if(!allInis.containsKey(iniFile.getName())) {
         WorkflowIni newIni = new WorkflowIni(iniFile);
         newIni.setLogSearchCmd(workManager.getFindLogsCmds());
-        allInis.put(iniFile.getAbsolutePath(), newIni);
+        allInis.put(iniFile.getName(), newIni);
       }
     }
 

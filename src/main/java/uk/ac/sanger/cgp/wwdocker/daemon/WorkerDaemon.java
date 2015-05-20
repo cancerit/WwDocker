@@ -192,8 +192,9 @@ public class WorkerDaemon implements Daemon {
               thisState.setStatus(HostStatus.ERROR);
             }
             
-            messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
             Runtime.getRuntime().removeShutdownHook(shutdownThread);
+            messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName);
+            messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
             shutdownThread = null;
             logger.info("Exit code: "+ futureTask.get());
 

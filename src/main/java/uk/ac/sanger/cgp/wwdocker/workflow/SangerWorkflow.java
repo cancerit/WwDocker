@@ -119,7 +119,7 @@ public class SangerWorkflow implements Workflow {
     String command = "docker run --rm -h master";
     command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
     command = command.concat(" -v ").concat(workflow.getAbsolutePath()).concat(":/workflow");
-    command = command.concat(" seqware/seqware_whitestar_pancancer");
+    command = command.concat(" ").concat(seqwareWhiteStarImage(config));
     return command;
   }
   

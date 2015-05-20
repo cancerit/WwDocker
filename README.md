@@ -91,15 +91,15 @@ This approach is allows new data from the central decider to be regularly added 
 * TCGA.pem - Upload key for TCGA results.
 * cghub.pem - Download key for TCGA BAMs
 
-Thr central decider returns the correct values for all of these when used to generate ini file using the templates.
+These need to be named like this to match the values returned by the central decider when generating ini files using the template model (see below).
 
 ### general
-* `primaryLargeTmp` - You will need a large tmp area for downloading files to be pushed to workers
-* `qPrefix` - this sets the queue name prefix so that different workflows don't share queues
-    * Normally the workflow name, but if you have different versions of the same workflow extend this
+* `primaryLargeTmp` - You will need a large tmp area on the primary node.
+* `qPrefix` - this sets the queue name prefix so that different workflows don't share queues.
+    * Normally the workflow name, but if you have different versions extend this.
 
 #### worker configs
-It is unlikely that it will be necessary to modify these values
+It is unlikely that it will be necessary to modify these values.
 
 * `log4-worker` - defines which log4j configuration to push to the worker node.
 * `log4-delete` - Should correlate with the locations defined in the log4j config above.
@@ -107,18 +107,18 @@ It is unlikely that it will be necessary to modify these values
 #### provisioning info
 These parameters will be rarely modified as they are specific for each workflow, versions may need bumping occasionally.
 
-* `pullDockerImages` - csv of images that should be setup using `docker pull`
-* `curlDockerImages` - csv of images that should be setup using `docker load`
-* `seqware` - The seqware distribution (generally used only to unpack a workflow)
+* `pullDockerImages` - csv of images that should be setup using `docker pull`.
+* `curlDockerImages` - csv of images that should be setup using `docker load`.
+* `seqware` - The seqware distribution (generally used only to unpack a workflow).
 * `workflow` - The workflow to be unpacked and executed on the worker.
 
-Any items with a remote URL (i.e. not a local file) are automatically downloaded and pushed to the workers (excluding pullDockerImages).
+Any items with a remote URL (i.e. not a local file) are automatically downloaded and pushed to the workers (excluding `pullDockerImages`).
 
 
 # Donor INI files and templates
 Your ini files for the workflows should be created using the the [central-decider-client](https://github.com/ICGC-TCGA-PanCancer/central-decider-client).
 
-Some items to note regarding pem paths in the different workflows, examples are in the template format
+Some items to note regarding pem paths in the different workflows, examples are in the template format:
 
 * Sanger - pem paths are those within the docker image, i.e. always:
     * `pemFile=/workflow/[% download_gnos_key %].pem`
@@ -133,7 +133,7 @@ It is possible to have multiple 'primary' daemons running managing a different s
 
 All that is required is to ensure that the `qPrefix` is set differently for each logical group in `config.cfg`.
 
-There are 9 core queues for each manager, these are:
+There are 10 core queues for each manager, these are:
 
 * `*.ACTIVE`
     * Responses from hosts to status requests are sent to this queue.
@@ -173,6 +173,13 @@ There are 9 core queues for each manager, these are:
     * Content - JSON `WorkerState.class`
 * `*.UPLOADED`
     * Purely for book keeping, generally safe to purge.
+    * Holds the workflow ini files for successfully completed work.
+    * Header - none
+    * Content - JSON `WorkflowIni.class`
+
+In addition to these each host will have an activity queue under the same  `qPrefix`.
+
+All queues are persistent and durable.
 
 ----
 

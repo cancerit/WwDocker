@@ -100,7 +100,7 @@ public class DEWorkflow implements Workflow {
     if(extras != null) {
       command = command.concat(extras);
     }
-    command = command.concat(" seqware/seqware_whitestar_pancancer");
+    command = command.concat(" ").concat(seqwareWhiteStarImage(config));
     return command;
   }
   
@@ -183,7 +183,8 @@ public class DEWorkflow implements Workflow {
      || Local.pushToHost(workerLog, host, optDir, envs, ssh, localTmp) != 0 // worker log config
      || Local.pushToHost(tmpConf.getAbsolutePath(), host, optDir, envs, ssh, localTmp) != 0 // config file
      || Remote.chmodPath(ssh, "go-wrx", optDir.concat("/*"), true) != 0 // file will have passwords
-      || Local.pushFileSetToHost(Utils.getGnosKeys(config), host, remoteWorkflowDir, envs, ssh, localTmp) != 0 // GNOS keys
+     || Local.pushFileSetToHost(Utils.getGnosKeys(config), host, config.getString("datastoreDir"), envs, ssh, localTmp) != 0 // GNOS keys, note DATASTORE
+     || Remote.chmodPath(ssh, "a+r", config.getString("datastoreDir").concat("/*.pem"), false) != 0 // need to ensure these are readable within the image
      || Remote.startWorkerDaemon(ssh, thisJar.getName(), tmpConf.getName(), mode) != 0) {
       return provisioned;
     }
@@ -193,15 +194,18 @@ public class DEWorkflow implements Workflow {
   
   @Override
   public int cleanDockerPath(BaseConfiguration config) {
-    String command = baseDockerCommand(config, " -v /var/run/docker.sock:/var/run/docker.sock");
-    String innerDocker = "docker run --rm -h master -v "+ config.getString("datastoreDir") +":"+ config.getString("datastoreDir") +" seqware/pancancer_upload_download /bin/sh -c 'rm -rf "+config.getString("datastoreDir")+"/oozie-*'";
-    
-    String fullCommand = command.concat(" ").concat(innerDocker);
-    
-    List <String> args = new ArrayList();
+    String command = baseDockerCommand(config, null);
+    String datastore = config.getString("datastoreDir");
+    List<String> args = new ArrayList(Arrays.asList(command.split(" ")));
     args.add("/bin/bash");
     args.add("-c");
-    args.add(fullCommand);
+    args.add("rm -rf "
+      +datastore+ "/oozie-* "
+      +datastore+ "/*.ini "
+      +datastore+ "/logs.tar.gz "
+      +datastore+ "/toInclude.lst"
+      +datastore+ "/DEWorkflowData/dkfz/gtdownload-*.log"
+    );
     
     ProcessBuilder pb = new ProcessBuilder(args);
 

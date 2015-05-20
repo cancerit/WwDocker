@@ -49,7 +49,8 @@ public class Control {
     + "\n\t\t- Starts the 'head' node daemon which provisions and monitors workers"
     + "\n\n\tconfig.cfg PRIMARY KILLALL"
     + "\n\t\t- Issues KILL message to all hosts listed in the workers.cfg file"
-    + "\n\n\tconfig.cfg ERRORS /some/path [hostname]"
+    + "\n\n\tconfig.cfg ERRORS /some/path"
+    + "\n\n\tconfig.cfg CLEARERR hostname"
     + "\n\t\t- Gets and expands logs from the *.ERRORLOG queue";
   
   public static void main(String[] argv) throws Exception {
@@ -70,17 +71,28 @@ public class Control {
     try {
       PropertiesConfiguration config = Config.loadConfig(configPath);
       Messaging rmq = new Messaging(config);
-      if(executionPath.equalsIgnoreCase("errors")) {
-        if(modeOrPath == null) {
-          logger.fatal(USAGE);
-          System.err.println(USAGE);
-          System.exit(1);
-        }
+      logger.warn(executionPath);
+      if((executionPath.equalsIgnoreCase("CLEARERR") || executionPath.equalsIgnoreCase("ERRORS")) && modeOrPath == null) {
+        logger.fatal(USAGE);
+        System.err.println(USAGE);
+        System.exit(1);
+      }
+      
+      if(executionPath.equalsIgnoreCase("CLEARERR")) {
+        rmq.removeFromStateQueue(config.getString("qPrefix").concat(".ERROR"), modeOrPath);
+        rmq.removeFromStateQueue(config.getString("qPrefix").concat(".ERRORLOGS"), modeOrPath);
+      }
+      else if(executionPath.equalsIgnoreCase("ERRORS")) {
         ErrorLogs.getLog(config, rmq, modeOrPath);
       }
-      else {
+      else if(executionPath.equalsIgnoreCase("PRIMARY") || executionPath.equalsIgnoreCase("WORKER")) {
         Daemon runme = new DaemonFactory().getDaemon(executionPath, config, rmq);
         runme.run(modeOrPath);
+      }
+      else {
+        logger.fatal(USAGE);
+        System.err.println(USAGE);
+        System.exit(1);
       }
     }
     catch(Exception e) {

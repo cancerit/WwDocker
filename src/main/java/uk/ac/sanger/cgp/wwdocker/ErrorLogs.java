@@ -62,7 +62,6 @@ public class ErrorLogs {
       logger.fatal(e.getMessage(), e);
       System.exit(1);
     }
-    
     if(logSets != null) {
       for(File f : logSets) {
         String host = f.getName().replaceAll("\\.tar\\.gz$", "");

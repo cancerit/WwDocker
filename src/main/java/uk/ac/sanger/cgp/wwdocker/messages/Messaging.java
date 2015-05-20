@@ -135,7 +135,7 @@ public class Messaging {
 
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, false, consumer);
-    QueueingConsumer.Delivery delivery = consumer.nextDelivery(100);
+    QueueingConsumer.Delivery delivery = consumer.nextDelivery(1000);
     
     Set seen = new HashSet();
     
@@ -155,8 +155,9 @@ public class Messaging {
       seen.add(delivery.getProperties().getHeaders().get("host"));
       files.add(outTo);
       logger.info(queue + " retrieved: " + outTo.getAbsolutePath());
-      delivery = consumer.nextDelivery(100);
+      delivery = consumer.nextDelivery(1000);
     }
+    logger.warn("getFiles done");
     channel.close();
     return files;
   }
