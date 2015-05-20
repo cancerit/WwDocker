@@ -51,6 +51,7 @@ public class Control {
     + "\n\t\t- Issues KILL message to all hosts listed in the workers.cfg file"
     + "\n\n\tconfig.cfg ERRORS /some/path"
     + "\n\n\tconfig.cfg CLEARERR hostname"
+    + "\n\n\tconfig.cfg CLEANQ  queueName matchStringToRemove"
     + "\n\t\t- Gets and expands logs from the *.ERRORLOG queue";
   
   public static void main(String[] argv) throws Exception {
@@ -72,7 +73,9 @@ public class Control {
       PropertiesConfiguration config = Config.loadConfig(configPath);
       Messaging rmq = new Messaging(config);
       logger.warn(executionPath);
-      if((executionPath.equalsIgnoreCase("CLEARERR") || executionPath.equalsIgnoreCase("ERRORS")) && modeOrPath == null) {
+      if(((executionPath.equalsIgnoreCase("CLEARERR") || executionPath.equalsIgnoreCase("ERRORS")) && modeOrPath == null)
+        || (executionPath.equalsIgnoreCase("CLEANQ") && argv.length != 4)
+        ) {
         logger.fatal(USAGE);
         System.err.println(USAGE);
         System.exit(1);
@@ -81,6 +84,11 @@ public class Control {
       if(executionPath.equalsIgnoreCase("CLEARERR")) {
         rmq.removeFromStateQueue(config.getString("qPrefix").concat(".ERROR"), modeOrPath);
         rmq.removeFromStateQueue(config.getString("qPrefix").concat(".ERRORLOGS"), modeOrPath);
+      }
+      else if(executionPath.equalsIgnoreCase("CLEANQ")) {
+        String queueName = argv[2];
+        String removeIfMatch = argv[3];
+        rmq.cleanQueue(config.getString("qPrefix").concat(".").concat(queueName.toUpperCase()), removeIfMatch);
       }
       else if(executionPath.equalsIgnoreCase("ERRORS")) {
         ErrorLogs.getLog(config, rmq, modeOrPath);

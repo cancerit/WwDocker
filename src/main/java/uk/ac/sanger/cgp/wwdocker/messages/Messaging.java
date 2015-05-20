@@ -128,6 +128,31 @@ public class Messaging {
     channel.close();
   }
   
+  public void cleanQueue(String queue, String match)  throws IOException, InterruptedException {
+    Channel channel = connectionRcv.createChannel();
+    channel.queueDeclare(queue, true, false, false, null);
+    
+    QueueingConsumer consumer = new QueueingConsumer(channel);
+    channel.basicConsume(queue, false, consumer);
+    QueueingConsumer.Delivery delivery = consumer.nextDelivery(1000);
+    Set seen = new HashSet();
+    while(delivery != null) {
+      String body = new String(delivery.getBody());
+      if(seen.contains(body)) {
+        break;
+      }
+      if(body.contains(match)) {
+        channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+      }
+      else {
+        channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
+        seen.add(body);
+      }
+      delivery = consumer.nextDelivery(1000);
+    }
+    channel.close();
+  }
+  
   public List<File> getFiles(String queue, Path outFolder, boolean ack) throws IOException, InterruptedException {
     List files = new ArrayList();
     Channel channel = connectionRcv.createChannel();

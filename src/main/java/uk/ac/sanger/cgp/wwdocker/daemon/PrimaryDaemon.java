@@ -130,7 +130,7 @@ public class PrimaryDaemon implements Daemon {
         provState.setChangeStatusTo(HostStatus.CHECKIN);
         provState.setReplyToQueue(qPrefix.concat(".ACTIVE"));
         if(e.getValue().equals("TO_PROVISION")) {
-          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 10000)) {
+          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 15000)) {
             logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
             if(!workManager.provisionHost(host, PrimaryDaemon.config, thisJar, tmpConf, mode, envs)) {
               hosts.replace(host, "BROKEN");
