@@ -34,8 +34,6 @@ package uk.ac.sanger.cgp.wwdocker.workflow;
 import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -51,7 +49,6 @@ import static uk.ac.sanger.cgp.wwdocker.actions.Local.execCommand;
 import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
-import static uk.ac.sanger.cgp.wwdocker.interfaces.Workflow.logger;
 
 /**
  *
@@ -61,7 +58,9 @@ public class DEWorkflow implements Workflow {
   private static final Logger logger = LogManager.getLogger();
   BaseConfiguration config;
   
-  private static final String[] logSearchCmd = {"find seqware-results/ -type f | grep -F '/logs/'"};
+  private static final String[] logSearchCmd = {"find oozie-*/ -type f | grep 'gtdownload.*log$'",
+                                                "find oozie-*/shared_workspace/oozie-*/generated-scripts -type f",
+                                                "find oozie-*/shared_workspace/oozie-*/delly_results -type f | grep '.log$'",};
   
   public DEWorkflow(BaseConfiguration config) {
     this.config = config;
@@ -123,7 +122,8 @@ public class DEWorkflow implements Workflow {
     // don't add the pem key here, just standardise in the ini file template
     
     String command = baseDockerCommand(config, extras);
-    command = command.concat(" bash -c \"sed -i 's|/datastore|" + config.getString("datastoreDir") + "|g' /home/seqware/.seqware/settings ; ");
+    command = command.concat(" bash -c \"sed -i 's|/datastore|" + config.getString("datastoreDir") + "|g' /home/seqware/.seqware/settings ;");
+    command = command.concat(" sed -i 's|OOZIE_RETRY_MAX=.*|OOZIE_RETRY_MAX=0|' /home/seqware/.seqware/settings ;");
     command = command.concat(" seqware bundle launch --no-metadata --engine whitestar");
     command = command.concat(" --dir /workflow/").concat(config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", ""));
     command = command.concat(" --ini /workflow.ini");

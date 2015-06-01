@@ -56,8 +56,8 @@ public class SangerWorkflow implements Workflow {
   private static final Logger logger = LogManager.getLogger();
   BaseConfiguration config;
   
-  private static final String[] logSearchCmd = {"find seqware-results/ -type f | grep -F '/logs/'",
-                                                "find ./ -type f | grep 'gtdownload.*log$'"};
+  private static final String[] logSearchCmd = {"find oozie-*/seqware-results/ -type f | grep -F '/logs/'",
+                                                "find oozie-*/ -type f | grep 'gtdownload.*log$'"};
   
   public SangerWorkflow(BaseConfiguration config) {
     this.config = config;
