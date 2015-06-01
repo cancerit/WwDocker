@@ -31,11 +31,8 @@
 
 package uk.ac.sanger.cgp.wwdocker.daemon;
 
-import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -51,7 +48,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
-import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
