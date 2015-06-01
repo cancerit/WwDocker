@@ -114,6 +114,7 @@ public class WorkerDaemon implements Daemon {
         if(recievedState.getChangeStatusTo() != null) {
           if(recievedState.getChangeStatusTo().equals(HostStatus.KILL)) {
             messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
+            messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName); // this is never changed unless a host dies/killed
             if(thisState.getStatus().equals(HostStatus.ERROR)) {
               messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOGS"), hostName);
             }
