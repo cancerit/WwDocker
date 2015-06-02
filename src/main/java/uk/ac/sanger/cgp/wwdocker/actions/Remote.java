@@ -334,7 +334,7 @@ public class Remote {
         if(channel.isClosed()){
           if(in.available()>0) continue; 
           exitCode = channel.getExitStatus();
-          fullOut = Utils.logOutput(fullOut+System.lineSeparator());
+          Utils.logOutput(fullOut+System.lineSeparator());
           logger.info("Exit code: " + exitCode);
           break;
         }
