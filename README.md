@@ -27,7 +27,7 @@ See the [manual](https://www.rabbitmq.com/man/rabbitmqctl.1.man.html) for additi
 
     http://localhost:15672
 
-5. Modify the config for [`rabbit_host`](#RabbitMQconfig) to the full host name.
+5. Modify the config for [`rabbit_host`](#rabbitmq-config) to the full host name.
 
 # Basic execution
 After compile the code can be run using the following:
