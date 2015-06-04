@@ -1,3 +1,34 @@
+# RabbitMQ server install
+
+1. AMQP server, This is a standard Ubuntu 14.04 system with the rabbitmq
+server installed using the packages provided [here](https://www.rabbitmq.com/download.html)
+
+2. Once installed run:
+
+
+    sudo bash
+    for i in rabbitmq_management rabbitmq_tracing rabbitmq_web_dispatch
+      rabbitmq_web_stomp rabbitmq_management_agent
+      rabbitmq_management_visualiser; do
+        rabbitmq-plugins enable $i
+    done
+
+3. Create the needed accounts:
+
+
+    rabbitmqctl add_user test test
+    rabbitmqctl set_user_tags test administrator
+    rabbitmqctl set_permissions -p / test ".*" ".*" ".*"
+
+See the [manual](https://www.rabbitmq.com/man/rabbitmqctl.1.man.html) for additional detail.
+
+4. Restart rabbitmq server and check you can connect to the web instance:
+
+
+    http://localhost:15672
+
+5. Modify the config for [`rabbit_host`](#RabbitMQconfig) to the full host name.
+
 # Basic execution
 After compile the code can be run using the following:
 
