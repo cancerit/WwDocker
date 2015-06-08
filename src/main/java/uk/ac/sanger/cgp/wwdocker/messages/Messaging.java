@@ -273,7 +273,7 @@ public class Messaging {
     channel.basicConsume(queue, false, consumer);
     boolean foundMyMessage = false;
     QueueingConsumer.Delivery delivery = consumer.nextDelivery(200);
-    int maxTries = 5;
+    int maxTries = 1000;
     while(!foundMyMessage && delivery != null && maxTries > 0) {
       // the toString in the middle of this is needed as it is wrapped with another type that can hold 4GB
       if(delivery.getProperties().getHeaders().get("host").toString().equals(hostToRemove)) {
