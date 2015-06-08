@@ -64,6 +64,19 @@ public class Local {
     return exitCode;
   }
   
+  public static int pushFileSetToHost(String[] sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
+    int exitCode = 0;
+    for(String sourceStr : sources) {
+      File source = new File(sourceStr);
+      int lExit = pushToHost(source.getAbsolutePath(), destHost, destPath, envs, session, tmpIn);
+      if(lExit != 0) {
+        exitCode = lExit;
+        break;
+      }
+    }
+    return exitCode;
+  }
+  
   public static int pushToHost(String source, String destHost, String destPath, Map envs, Session session, File tmpIn) {
     String localFile = source;
     int exitCode = -1;

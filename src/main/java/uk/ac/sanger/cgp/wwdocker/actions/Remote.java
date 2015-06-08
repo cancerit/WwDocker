@@ -130,12 +130,21 @@ public class Remote {
   
   public static int dockerLoad(Session session, String[] images, String workspace) {
     int exitCode = -1;
+    if(images.length == 1 && images[0].length() == 0) {
+      return 0;
+    }
     try {
       for(String i : images) {
-        String destFile = curl(session, i, workspace);
-        if(destFile == null) {
-          logger.error("Failed to retrieve file via curl: "+ i);
-          return 1;
+        String destFile;
+        if(i.startsWith("/")) {
+          destFile = i;
+        }
+        else {
+          destFile = curl(session, i, workspace);
+          if(destFile == null) {
+            logger.error("Failed to retrieve file via curl: "+ i);
+            return 1;
+          }
         }
         String command = "docker load -i " + destFile;
         exitCode = execCommand(session, command);
