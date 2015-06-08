@@ -34,6 +34,7 @@ package uk.ac.sanger.cgp.wwdocker.workflow;
 import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -144,6 +145,7 @@ public class DEWorkflow implements Workflow {
     File remoteWorkflowZip = new File(remoteWorkflowDir.concat("/").concat(localWorkflowZip.replaceAll(".*/", "")));
     String[] pullDockerImages = config.getStringArray("pullDockerImages");
     String[] curlDockerImages = config.getStringArray("curlDockerImages");
+    String[] pushDockerImages = config.getStringArray("pushDockerImages");
     String optDir = "/opt";
     String workerLog = config.getString("log4-worker");
     File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
@@ -160,7 +162,18 @@ public class DEWorkflow implements Workflow {
     Remote.cleanFiles(ssh, new String[]{config.getString("log4-delete")});
     
     Remote.cleanupOldImages(ssh); // incase lots of stale ones are already present
-    if (Remote.dockerPull(ssh, pullDockerImages) != 0 || Remote.dockerLoad(ssh, curlDockerImages, remoteWorkflowDir) != 0) {
+    
+    if(Local.pushFileSetToHost(pushDockerImages, host, "/opt", envs, ssh, null) != 0) {
+      return provisioned;
+    }
+    String[] pushedDockerImages = new String[pushDockerImages.length];
+    for(int i=0; i<pushDockerImages.length; i++) {
+      pushedDockerImages[i] = Paths.get("/opt", new File(pushDockerImages[i]).getName()).toFile().getPath();
+    }
+    
+    if (Remote.dockerPull(ssh, pullDockerImages) != 0
+        || Remote.dockerLoad(ssh, curlDockerImages, remoteWorkflowDir) != 0
+        || Remote.dockerLoad(ssh, pushedDockerImages, remoteWorkflowDir) != 0) {
       return provisioned;
     }
     Remote.cleanupOldImages(ssh); // incase lots of stale ones are already present
@@ -177,7 +190,7 @@ public class DEWorkflow implements Workflow {
     if (Remote.expandWorkflow(ssh, remoteWorkflowZip, remoteSeqwareJar, remoteWorkflowDir) != 0) {
       return provisioned;
     }
-    String workflowBase = remoteWorkflowZip.getName().replaceAll("\\.zip$", "");
+    //String workflowBase = remoteWorkflowZip.getName().replaceAll("\\.zip$", "");
     //Path gnosDest = Paths.get(remoteWorkflowDir, workflowBase);
     if (Local.pushToHost(thisJar.getAbsolutePath(), host, optDir, envs, ssh, localTmp) != 0 // this jar file
      || Local.pushToHost(workerLog, host, optDir, envs, ssh, localTmp) != 0 // worker log config
