@@ -152,6 +152,7 @@ public class DEWorkflow implements Workflow {
     
     List<String> createPaths = new ArrayList();
     createPaths.add("/opt");
+    createPaths.add("/opt/jre");
     createPaths.add(remoteWorkflowDir);
     createPaths.add(config.getString("datastoreDir"));
     
