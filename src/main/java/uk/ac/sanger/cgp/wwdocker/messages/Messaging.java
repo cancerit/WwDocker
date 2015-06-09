@@ -265,20 +265,25 @@ public class Messaging {
     return response;
   }
   
+  private int messageCount(String queue)  throws IOException, InterruptedException {
+    Channel channel = connectionRcv.createChannel();
+    int messages = channel.queueDeclare(queue, true, false, false, null).getMessageCount();
+    channel.close();
+    return messages;
+  }
+  
   public void removeFromStateQueue(String queue, String hostToRemove) throws IOException, InterruptedException {
     Channel channel = connectionRcv.createChannel();
     channel.queueDeclare(queue, true, false, false, null);
 
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, false, consumer);
-    boolean foundMyMessage = false;
     QueueingConsumer.Delivery delivery = consumer.nextDelivery(200);
-    int maxTries = 1000;
-    while(!foundMyMessage && delivery != null && maxTries > 0) {
+    int maxTries = messageCount(queue) * 2; // x 2 just incase the queue grows in the interim
+    while(delivery != null && maxTries > 0) {
       // the toString in the middle of this is needed as it is wrapped with another type that can hold 4GB
       if(delivery.getProperties().getHeaders().get("host").toString().equals(hostToRemove)) {
         channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
-        foundMyMessage = true;
       }
       else {
         channel.basicNack(delivery.getEnvelope().getDeliveryTag(), false, true);
