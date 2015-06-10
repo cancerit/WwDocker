@@ -91,20 +91,22 @@ public class Docker implements Callable<Integer> {
   }
   
   public File packageLogs() {
-    String oozieBase = config.getString("datastoreDir").concat("/oozie-*");
-    String includeFile = config.getString("datastoreDir").concat("/toInclude.lst");
-    File logTar = Paths.get(config.getString("datastoreDir"),"logs.tar.gz").toFile();
+    String datastore = config.getString("datastoreDir");
+    String includeFile = datastore.concat("/toInclude.lst");
+    File logTar = Paths.get(datastore,"logs.tar.gz").toFile();
     if(logTar.exists()) {
       logTar.delete();
     }
-    String command = "cd ".concat(oozieBase)
-      .concat("; find generated-scripts/ -type f > ")
+    String command = "cd ".concat(datastore)
+      .concat("; find oozie-*/generated-scripts/ -type f > ")
+      .concat(includeFile)
+      .concat("; find /tmp/WwDocker-logs/ -type f >> ") // will break if log4j output moved
       .concat(includeFile);
     
     for(String c : iniFile.getLogSearchCmds()) {
       command = command.concat(";").concat(c).concat(">>").concat(includeFile);
     }
-    command = command.concat(";tar -C ").concat(oozieBase)
+    command = command.concat(";tar -C ").concat(datastore)
       .concat(" -czf ")
       .concat(logTar.getAbsolutePath())
       .concat(" -T ").concat(includeFile);

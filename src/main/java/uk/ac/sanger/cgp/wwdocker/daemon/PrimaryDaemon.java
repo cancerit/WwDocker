@@ -31,11 +31,8 @@
 
 package uk.ac.sanger.cgp.wwdocker.daemon;
 
-import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -51,7 +48,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
-import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
@@ -130,7 +126,7 @@ public class PrimaryDaemon implements Daemon {
         provState.setChangeStatusTo(HostStatus.CHECKIN);
         provState.setReplyToQueue(qPrefix.concat(".ACTIVE"));
         if(e.getValue().equals("TO_PROVISION")) {
-          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 10000)) {
+          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 15000)) {
             logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
             if(!workManager.provisionHost(host, PrimaryDaemon.config, thisJar, tmpConf, mode, envs)) {
               hosts.replace(host, "BROKEN");
@@ -193,13 +189,13 @@ public class PrimaryDaemon implements Daemon {
     Map<String, WorkflowIni> allInis= new HashMap();
     for (String m : existing) {
       WorkflowIni iniFile = (WorkflowIni) Utils.jsonToObject(m, WorkflowIni.class);
-      allInis.put(iniFile.getIniFile().getAbsolutePath(), iniFile);
+      allInis.put(iniFile.getIniFile().getName(), iniFile);
     }
     for(File iniFile : iniFiles) {
-      if(!allInis.containsKey(iniFile.getAbsolutePath())) {
+      if(!allInis.containsKey(iniFile.getName())) {
         WorkflowIni newIni = new WorkflowIni(iniFile);
         newIni.setLogSearchCmd(workManager.getFindLogsCmds());
-        allInis.put(iniFile.getAbsolutePath(), newIni);
+        allInis.put(iniFile.getName(), newIni);
       }
     }
 

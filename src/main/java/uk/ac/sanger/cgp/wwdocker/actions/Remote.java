@@ -41,7 +41,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Paths;
+import java.util.List;
 import java.util.Properties;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
@@ -98,6 +98,7 @@ public class Remote {
       jsch.setKnownHosts(userKnownHosts);
       jsch.addIdentity(privateKeyFile().getAbsolutePath());
       Session thisSess=jsch.getSession(config.getString("ssh_user"), host, 22);
+      thisSess.setServerAliveInterval(1000);
       thisSess.setPassword(config.getString("ssh_pw"));
       session = thisSess;
     }
@@ -129,12 +130,21 @@ public class Remote {
   
   public static int dockerLoad(Session session, String[] images, String workspace) {
     int exitCode = -1;
+    if(images.length == 1 && images[0].length() == 0) {
+      return 0;
+    }
     try {
       for(String i : images) {
-        String destFile = curl(session, i, workspace);
-        if(destFile == null) {
-          logger.error("Failed to retrieve file via curl: "+ i);
-          return 1;
+        String destFile;
+        if(i.startsWith("/")) {
+          destFile = i;
+        }
+        else {
+          destFile = curl(session, i, workspace);
+          if(destFile == null) {
+            logger.error("Failed to retrieve file via curl: "+ i);
+            return 1;
+          }
         }
         String command = "docker load -i " + destFile;
         exitCode = execCommand(session, command);
@@ -216,6 +226,11 @@ public class Remote {
     return paramExec(session, command);
   }
   
+  public static int createPaths(Session session, List<String> paths) {
+    String[] array = paths.toArray(new String[paths.size()]);
+    return createPaths(session, array);
+  }
+  
   public static int createPaths(Session session, String[] paths) {
     String command = "mkdir -p";
     return paramExec(session, command, paths);
@@ -224,6 +239,11 @@ public class Remote {
   public static int chmodPath(Session session, String mode, String path, boolean recursive) {
     String[] paths = {path};
     return chmodPaths(session, mode, paths, recursive);
+  }
+  
+  public static int chmodPaths(Session session, String mode, List<String> paths, boolean recursive) {
+    String[] array = paths.toArray(new String[paths.size()]);
+    return chmodPaths(session, mode, array, recursive);
   }
   
   public static int chmodPaths(Session session, String mode, String[] paths, boolean recursive) {
@@ -323,7 +343,7 @@ public class Remote {
         if(channel.isClosed()){
           if(in.available()>0) continue; 
           exitCode = channel.getExitStatus();
-          fullOut = Utils.logOutput(fullOut+System.lineSeparator());
+          Utils.logOutput(fullOut+System.lineSeparator());
           logger.info("Exit code: " + exitCode);
           break;
         }

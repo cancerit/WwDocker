@@ -32,12 +32,12 @@
 package uk.ac.sanger.cgp.wwdocker.factories;
 
 import org.apache.commons.configuration.BaseConfiguration;
-import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
 import uk.ac.sanger.cgp.wwdocker.workflow.DEWorkflow;
 import uk.ac.sanger.cgp.wwdocker.workflow.SangerWorkflow;
+import uk.ac.sanger.cgp.wwdocker.workflow.TestWorkflow;
 
 /**
  *
@@ -56,6 +56,9 @@ public class WorkflowFactory {
     logger.trace("Got workflow: "+ workflow);
     
     switch(workflow) {
+      case "Test":
+        logger.trace("Creating a TestWorkflow manager");
+        return new TestWorkflow(config);
       case "SangerPancancerCgpCnIndelSnvStr":
         logger.trace("Creating a SangerWorkflow manager");
         return new SangerWorkflow(config);

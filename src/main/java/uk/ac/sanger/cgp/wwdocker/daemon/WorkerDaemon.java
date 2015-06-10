@@ -78,20 +78,22 @@ public class WorkerDaemon implements Daemon {
     
     Thread shutdownThread = null;
     
-    File thisConfig = new File("/opt/remote.cfg");
+    String qPrefix = config.getString("qPrefix");
+    
+    File thisConfig = new File("/opt/"+ qPrefix + ".remote.cfg");
     File thisJar = Utils.thisJarFile();
     
     // build a local WorkerState
     WorkerState thisState = new WorkerState(thisJar, thisConfig);
     thisState.setStatus(HostStatus.CLEAN);
     String hostName = thisState.getResource().getHostName();
-    String qPrefix = config.getString("qPrefix");
     
     // Remove from broken as I'm not anymore if I'm running
     messaging.removeFromStateQueue(qPrefix.concat(".BROKEN"), hostName);
     
     // I'm running so send a message to the CLEAN queue
     messaging.sendMessage(qPrefix.concat(".CLEAN"), thisState);
+    boolean firstCleanIter = true;
     String myQueue = qPrefix.concat(".").concat(hostName);
     
     int counter = 30;
@@ -112,6 +114,7 @@ public class WorkerDaemon implements Daemon {
         if(recievedState.getChangeStatusTo() != null) {
           if(recievedState.getChangeStatusTo().equals(HostStatus.KILL)) {
             messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
+            messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName); // this is never changed unless a host dies/killed
             if(thisState.getStatus().equals(HostStatus.ERROR)) {
               messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOGS"), hostName);
             }
@@ -142,13 +145,16 @@ public class WorkerDaemon implements Daemon {
       // then we do the actual work
       if(thisState.getStatus().equals(HostStatus.CLEAN)) {
         
-        // clean up any other queues that may have legacy entries
-        messaging.removeFromStateQueue(qPrefix.concat(".").concat("DONE"), hostName);
-        messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERROR"), hostName);
-        messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOGS"), hostName);
-        messaging.removeFromStateQueue(qPrefix.concat(".").concat("RECEIVE"), hostName);
-        messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName);
-        messaging.removeFromStateQueue(qPrefix.concat(".").concat("BROKEN"), hostName);
+        // clean up any other queues that may have legacy entries, boolean to prevent rapid query rates
+        if(firstCleanIter) {
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("DONE"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERROR"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOGS"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("RECEIVE"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("BROKEN"), hostName);
+          firstCleanIter = false;
+        }
         
         //We pull data from the wwd_PEND queue
         WorkflowIni workIni = (WorkflowIni) messaging.getMessageObject(qPrefix.concat(".").concat("PEND"), WorkflowIni.class, 10);
@@ -187,8 +193,9 @@ public class WorkerDaemon implements Daemon {
               thisState.setStatus(HostStatus.ERROR);
             }
             
-            messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
             Runtime.getRuntime().removeShutdownHook(shutdownThread);
+            messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName);
+            messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
             shutdownThread = null;
             logger.info("Exit code: "+ futureTask.get());
 
@@ -210,6 +217,7 @@ public class WorkerDaemon implements Daemon {
             state change pushed from the control code */
         messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
         thisState.setStatus(HostStatus.CLEAN);
+        firstCleanIter = true;
         thisState.setWorkflowIni(null);
         messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
       }

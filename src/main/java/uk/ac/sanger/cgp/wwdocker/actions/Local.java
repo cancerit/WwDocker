@@ -34,20 +34,16 @@ package uk.ac.sanger.cgp.wwdocker.actions;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.IOUtils;
-import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
-import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
 
 /**
  *
@@ -59,6 +55,19 @@ public class Local {
   public static int pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
     int exitCode = 0;
     for(File source : sources) {
+      int lExit = pushToHost(source.getAbsolutePath(), destHost, destPath, envs, session, tmpIn);
+      if(lExit != 0) {
+        exitCode = lExit;
+        break;
+      }
+    }
+    return exitCode;
+  }
+  
+  public static int pushFileSetToHost(String[] sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
+    int exitCode = 0;
+    for(String sourceStr : sources) {
+      File source = new File(sourceStr);
       int lExit = pushToHost(source.getAbsolutePath(), destHost, destPath, envs, session, tmpIn);
       if(lExit != 0) {
         exitCode = lExit;
@@ -136,17 +145,29 @@ public class Local {
     logger.info("Executing: " + command);
     int exitCode = -1;
     Process p = null;
+    File tempOut = null;
+    File tempErr = null;
     try {
+      tempOut = File.createTempFile("wwdExec", ".out");
+      tempErr = File.createTempFile("wwdExec", ".err");
+      pb.redirectOutput(tempOut);
+      pb.redirectError(tempErr);
       p = pb.start();
-      String progErr = IOUtils.toString(p.getErrorStream());
-      String progOut = IOUtils.toString(p.getInputStream());
       exitCode = p.waitFor();
-      Utils.logOutput(progErr, Level.ERROR);
-      Utils.logOutput(progOut, Level.TRACE);
     } catch(InterruptedException | IOException e) {
       logger.error(e.getMessage(), e);
     }
     finally {
+      if(tempOut != null && tempErr != null) {
+        try {
+          logger.info(IOUtils.toString(new FileInputStream(tempOut)));
+          logger.error(IOUtils.toString(new FileInputStream(tempErr)));
+          tempOut.delete();
+          tempErr.delete();
+        } catch (IOException e) {
+          logger.error("Failed to get output from log files");
+        }
+      }
       if(p != null) {
         p.destroy();
         exitCode = p.exitValue();
@@ -154,43 +175,5 @@ public class Local {
     }
     return exitCode;
   }
-  
-//  private static int execCommand(String command, Map envs, boolean shellCmd) {
-//    ProcessBuilder pb;
-//    if(shellCmd) {
-//      pb = new ProcessBuilder("/bin/sh", "-c", command);
-//    }
-//    else {
-//      pb = new ProcessBuilder(command.split(" "));
-//    }
-//    pb.redirectErrorStream(true);
-//    Map<String, String> pEnv = pb.environment();
-//    pEnv.putAll(envs);
-//    logger.info("Executing: " + command);
-//    int exitCode = -1;
-//    Process p = null;
-//    try {
-//      p = pb.start();
-//      BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-//      String line;
-//      while ((line = reader.readLine()) != null && p.isAlive()) {
-//        logger.info(line);
-//      }
-//      exitCode = p.waitFor();
-//      if(exitCode != 0) {
-//        Utils.logOutput(progErr, Level.ERROR);
-//      }
-//      Utils.logOutput(IOUtils.toString(p.getInputStream()), Level.TRACE);
-//    } catch(InterruptedException | IOException e) {
-//      logger.error(e.getMessage(), e);
-//    }
-//    finally {
-//      if(p != null) {
-//        p.destroy();
-//        exitCode = p.exitValue();
-//      }
-//    }
-//    return exitCode;
-//  }
 }
 

@@ -63,11 +63,24 @@ public interface Workflow {
   int runDocker(BaseConfiguration config, File iniFile);
   boolean provisionHost(String host, BaseConfiguration config, File thisJar, File tmpConf, String mode, Map<String,String> envs) throws InterruptedException;
   
+  default String seqwareWhiteStarImage(BaseConfiguration config) {
+    String[] pullImages = config.getStringArray("pullDockerImages");
+    String whitestar = null;
+    for(String i : pullImages) {
+      if(i.contains("seqware_whitestar_pancancer")) {
+        whitestar = i;
+        break;
+      }
+    }
+    return whitestar;
+  }
+  
   default int cleanDockerPath(BaseConfiguration config) {
     String command = baseDockerCommand(config, null);
-    command = command.concat(" /bin/sh -c");
     List<String> args = new ArrayList(Arrays.asList(command.split(" ")));
-    args.add("rm -rf /datastore/oozie-*");
+    args.add("/bin/bash");
+    args.add("-c");
+    args.add("rm -rf /datastore/oozie-* /datastore/*.ini /datastore/logs.tar.gz /datastore/toInclude.lst");
     
     ProcessBuilder pb = new ProcessBuilder(args);
 
