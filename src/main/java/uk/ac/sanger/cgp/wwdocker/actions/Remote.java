@@ -41,7 +41,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Paths;
+import java.util.List;
 import java.util.Properties;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.logging.log4j.LogManager;
@@ -98,6 +98,7 @@ public class Remote {
       jsch.setKnownHosts(userKnownHosts);
       jsch.addIdentity(privateKeyFile().getAbsolutePath());
       Session thisSess=jsch.getSession(config.getString("ssh_user"), host, 22);
+      thisSess.setServerAliveInterval(1000);
       thisSess.setPassword(config.getString("ssh_pw"));
       session = thisSess;
     }
@@ -129,11 +130,22 @@ public class Remote {
   
   public static int dockerLoad(Session session, String[] images, String workspace) {
     int exitCode = -1;
+    if(images.length == 1 && images[0].length() == 0) {
+      return 0;
+    }
     try {
       for(String i : images) {
-        File f = new File(i);
-        String destFile = Paths.get(workspace,f.getName()).toFile().getPath();
-        Remote.curl(session, i, destFile);
+        String destFile;
+        if(i.startsWith("/")) {
+          destFile = i;
+        }
+        else {
+          destFile = curl(session, i, workspace);
+          if(destFile == null) {
+            logger.error("Failed to retrieve file via curl: "+ i);
+            return 1;
+          }
+        }
         String command = "docker load -i " + destFile;
         exitCode = execCommand(session, command);
         if(exitCode != 0) {
@@ -214,6 +226,11 @@ public class Remote {
     return paramExec(session, command);
   }
   
+  public static int createPaths(Session session, List<String> paths) {
+    String[] array = paths.toArray(new String[paths.size()]);
+    return createPaths(session, array);
+  }
+  
   public static int createPaths(Session session, String[] paths) {
     String command = "mkdir -p";
     return paramExec(session, command, paths);
@@ -222,6 +239,11 @@ public class Remote {
   public static int chmodPath(Session session, String mode, String path, boolean recursive) {
     String[] paths = {path};
     return chmodPaths(session, mode, paths, recursive);
+  }
+  
+  public static int chmodPaths(Session session, String mode, List<String> paths, boolean recursive) {
+    String[] array = paths.toArray(new String[paths.size()]);
+    return chmodPaths(session, mode, array, recursive);
   }
   
   public static int chmodPaths(Session session, String mode, String[] paths, boolean recursive) {
@@ -259,12 +281,12 @@ public class Remote {
     }
   }
   
-  public static int startWorkerDaemon(Session session, String jarName, String mode) {
+  public static int startWorkerDaemon(Session session, String jarName, String confName, String mode) {
     int exitCode = -1;
     //java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
-    String command = "/opt/jre/bin/java -Xmx128m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
+    String command = "/opt/jre/bin/java -Xmx256m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
                       .concat(jarName)
-                      .concat(" /opt/remote.cfg Worker");
+                      .concat(" /opt/").concat(confName).concat(" Worker");
     if(mode != null) {
       command = command.concat(" ").concat(mode);
     }
@@ -277,8 +299,8 @@ public class Remote {
     return exitCode;
   }
   
-  public static int curl(Session session, String source, String destPath) {
-    int exitCode = -1;
+  public static String curl(Session session, String source, String destPath) {
+    String finalPath = null;
     try {
       String[] elements = source.split("/");
       if(!destPath.endsWith(System.getProperty("file.separator"))) {
@@ -290,12 +312,14 @@ public class Remote {
                             .concat(" -z ").concat(destPath)
                             .concat(" -o ").concat(destPath)
                             .concat(" ").concat(source);
-      exitCode = execCommand(session, getCommand);
+      if(execCommand(session, getCommand) == 0){
+        finalPath = destPath;
+      }
     }
     catch(JSchException e) {
       throw new RuntimeException("Failure in SSH connection", e);
     }
-    return exitCode;
+    return finalPath;
   }
   
   private static int execCommand(Session session, String command) throws JSchException {
@@ -319,7 +343,7 @@ public class Remote {
         if(channel.isClosed()){
           if(in.available()>0) continue; 
           exitCode = channel.getExitStatus();
-          fullOut = Utils.logOutput(fullOut+System.lineSeparator());
+          Utils.logOutput(fullOut+System.lineSeparator());
           logger.info("Exit code: " + exitCode);
           break;
         }

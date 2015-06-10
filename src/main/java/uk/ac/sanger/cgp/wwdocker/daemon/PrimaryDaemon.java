@@ -31,11 +31,8 @@
 
 package uk.ac.sanger.cgp.wwdocker.daemon;
 
-import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -51,7 +48,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
-import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
@@ -79,8 +75,9 @@ public class PrimaryDaemon implements Daemon {
   @Override
   public void run(String mode) throws IOException, InterruptedException, ConfigurationException {
     // lots of values that will be used over and over again
+    String qPrefix = config.getString("qPrefix");
     File thisJar = Utils.thisJarFile();
-    File tmpConf = new File(System.getProperty("java.io.tmpdir") + "/remote.cfg");
+    File tmpConf = new File(System.getProperty("java.io.tmpdir") + "/" + qPrefix + ".remote.cfg");
     tmpConf.deleteOnExit(); // contains passwords so cleanup
     config.save(tmpConf.getAbsolutePath()); // done like this so includes are pulled in
     Local.chmod(tmpConf, "go-rwx");
@@ -106,7 +103,6 @@ public class PrimaryDaemon implements Daemon {
     
     // this holds md5 of this JAR and the config (which lists the workflow code to use)
     WorkerState provState = new WorkerState(thisJar, tmpConf);
-    String qPrefix = config.getString("qPrefix");
     
     while(true) {
       addWorkToPend(workManager, config);
@@ -130,7 +126,7 @@ public class PrimaryDaemon implements Daemon {
         provState.setChangeStatusTo(HostStatus.CHECKIN);
         provState.setReplyToQueue(qPrefix.concat(".ACTIVE"));
         if(e.getValue().equals("TO_PROVISION")) {
-          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 3000)) {
+          if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 15000)) {
             logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
             if(!workManager.provisionHost(host, PrimaryDaemon.config, thisJar, tmpConf, mode, envs)) {
               hosts.replace(host, "BROKEN");
@@ -144,7 +140,7 @@ public class PrimaryDaemon implements Daemon {
         }
       }
       // we need a little sleep here or we'll kill the queues
-      Thread.sleep(10000);
+      Thread.sleep(1000);
     }
   }
   
@@ -189,17 +185,17 @@ public class PrimaryDaemon implements Daemon {
     
     // get all of the existing iniFiles so we can generate a uniq list
     String qPrefix = config.getString("qPrefix");
-    List<String> existing = messaging.getMessageStrings(qPrefix.concat(".PEND"), -1);
+    List<String> existing = messaging.getMessageStrings(qPrefix.concat(".PEND"), 500);
     Map<String, WorkflowIni> allInis= new HashMap();
     for (String m : existing) {
       WorkflowIni iniFile = (WorkflowIni) Utils.jsonToObject(m, WorkflowIni.class);
-      allInis.put(iniFile.getIniFile().getAbsolutePath(), iniFile);
+      allInis.put(iniFile.getIniFile().getName(), iniFile);
     }
     for(File iniFile : iniFiles) {
-      if(!allInis.containsKey(iniFile.getAbsolutePath())) {
+      if(!allInis.containsKey(iniFile.getName())) {
         WorkflowIni newIni = new WorkflowIni(iniFile);
-        newIni.setLogSearchCmd(workManager.getFindLogsCmd());
-        allInis.put(iniFile.getAbsolutePath(), newIni);
+        newIni.setLogSearchCmd(workManager.getFindLogsCmds());
+        allInis.put(iniFile.getName(), newIni);
       }
     }
 

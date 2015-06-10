@@ -64,7 +64,7 @@ public class Utils {
     return logOutput(stdout, Level.INFO);
   }
   
-  protected static String logOutput(String stdout, Level type) {
+  public static String logOutput(String stdout, Level type) {
     String remainder = null;
     String[] lines = stdout.split(System.lineSeparator());
     if(! stdout.endsWith(System.lineSeparator())) {
@@ -183,7 +183,7 @@ public class Utils {
     try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
       for(Path item : stream) {
         File file = item.toFile();
-        if(file.isFile()) {
+        if(file.isFile() && !file.isHidden()) {
           gnosKeys.add(file);
         }
         

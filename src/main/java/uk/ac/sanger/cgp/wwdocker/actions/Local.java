@@ -34,16 +34,13 @@ package uk.ac.sanger.cgp.wwdocker.actions;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.IOUtils;
-import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
@@ -55,75 +52,22 @@ import uk.ac.sanger.cgp.wwdocker.Config;
 public class Local {
   private static final Logger logger = LogManager.getLogger();
   
-  private static String baseDockerCommand(BaseConfiguration config) {
-    File workflow = Paths.get(config.getString("workflowDir"), config.getString("workflow").replaceAll(".*/", "").replaceAll("\\.zip$", "")).toFile();
-    
-    // probably want to clean the data store before we write the ini file
-    //docker run --rm -h master -v /cgp/datastore:/datastore -v /cgp/workflows/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow -i seqware/seqware_whitestar_pancancer rm -rf /datastore/
-    
-    String command = "docker run --rm -h master";
-    command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
-    command = command.concat(" -v ").concat(workflow.getAbsolutePath()).concat(":/workflow");
-    command = command.concat(" seqware/seqware_whitestar_pancancer");
-    return command;
-  }
-  
-  public static int runDocker(BaseConfiguration config, File iniFile) {
-    /*
-     * docker run --rm -h master -t
-     * -v /cgp/datastore:/datastore
-     * -v /cgp/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow
-     * -i seqware/seqware_whitestar_pancancer
-     * seqware bundle launch
-     * --no-metadata
-     * --engine whitestar-parallel
-     * --dir /workflow
-     * --ini /datastore/testRun.ini
-     */
-    
-    String command = baseDockerCommand(config);
-    command = command.concat(" seqware bundle launch --no-metadata --engine whitestar-parallel");
-    command = command.concat(" --dir /workflow");
-    command = command.concat(" --ini /datastore/").concat(iniFile.getName());
-    // this may need to be more itelligent than just the exit code
-    return execCommand(command, Config.getEnvs(config), false);
-  }
-  
-  public static int cleanDockerPath(BaseConfiguration config) {
-    String command = baseDockerCommand(config);
-    command = command.concat(" /bin/sh -c");
-    List<String> args = new ArrayList(Arrays.asList(command.split(" ")));
-    args.add("rm -rf /datastore/oozie-*");
-    
-    ProcessBuilder pb = new ProcessBuilder(args);
-
-    Map<String, String> pEnv = pb.environment();
-    pEnv.putAll(Config.getEnvs(config));
-    logger.info("Executing: " + String.join(" ", args));
-    int exitCode = -1;
-    Process p = null;
-    try {
-      p = pb.start();
-      String progErr = IOUtils.toString(p.getErrorStream());
-      String progOut = IOUtils.toString(p.getInputStream());
-      exitCode = p.waitFor();
-      Utils.logOutput(progErr, Level.ERROR);
-      Utils.logOutput(progOut, Level.TRACE);
-    } catch(InterruptedException | IOException e) {
-      logger.error(e.getMessage(), e);
-    }
-    finally {
-      if(p != null) {
-        p.destroy();
-        exitCode = p.exitValue();
+  public static int pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
+    int exitCode = 0;
+    for(File source : sources) {
+      int lExit = pushToHost(source.getAbsolutePath(), destHost, destPath, envs, session, tmpIn);
+      if(lExit != 0) {
+        exitCode = lExit;
+        break;
       }
     }
     return exitCode;
   }
   
-  public static int pushFileSetToHost(List<File> sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
+  public static int pushFileSetToHost(String[] sources, String destHost, String destPath, Map envs, Session session, File tmpIn) {
     int exitCode = 0;
-    for(File source : sources) {
+    for(String sourceStr : sources) {
+      File source = new File(sourceStr);
       int lExit = pushToHost(source.getAbsolutePath(), destHost, destPath, envs, session, tmpIn);
       if(lExit != 0) {
         exitCode = lExit;
@@ -201,17 +145,29 @@ public class Local {
     logger.info("Executing: " + command);
     int exitCode = -1;
     Process p = null;
+    File tempOut = null;
+    File tempErr = null;
     try {
+      tempOut = File.createTempFile("wwdExec", ".out");
+      tempErr = File.createTempFile("wwdExec", ".err");
+      pb.redirectOutput(tempOut);
+      pb.redirectError(tempErr);
       p = pb.start();
-      String progErr = IOUtils.toString(p.getErrorStream());
-      String progOut = IOUtils.toString(p.getInputStream());
       exitCode = p.waitFor();
-      Utils.logOutput(progErr, Level.ERROR);
-      Utils.logOutput(progOut, Level.TRACE);
     } catch(InterruptedException | IOException e) {
       logger.error(e.getMessage(), e);
     }
     finally {
+      if(tempOut != null && tempErr != null) {
+        try {
+          logger.info(IOUtils.toString(new FileInputStream(tempOut)));
+          logger.error(IOUtils.toString(new FileInputStream(tempErr)));
+          tempOut.delete();
+          tempErr.delete();
+        } catch (IOException e) {
+          logger.error("Failed to get output from log files");
+        }
+      }
       if(p != null) {
         p.destroy();
         exitCode = p.exitValue();
@@ -219,43 +175,5 @@ public class Local {
     }
     return exitCode;
   }
-  
-//  private static int execCommand(String command, Map envs, boolean shellCmd) {
-//    ProcessBuilder pb;
-//    if(shellCmd) {
-//      pb = new ProcessBuilder("/bin/sh", "-c", command);
-//    }
-//    else {
-//      pb = new ProcessBuilder(command.split(" "));
-//    }
-//    pb.redirectErrorStream(true);
-//    Map<String, String> pEnv = pb.environment();
-//    pEnv.putAll(envs);
-//    logger.info("Executing: " + command);
-//    int exitCode = -1;
-//    Process p = null;
-//    try {
-//      p = pb.start();
-//      BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-//      String line;
-//      while ((line = reader.readLine()) != null && p.isAlive()) {
-//        logger.info(line);
-//      }
-//      exitCode = p.waitFor();
-//      if(exitCode != 0) {
-//        Utils.logOutput(progErr, Level.ERROR);
-//      }
-//      Utils.logOutput(IOUtils.toString(p.getInputStream()), Level.TRACE);
-//    } catch(InterruptedException | IOException e) {
-//      logger.error(e.getMessage(), e);
-//    }
-//    finally {
-//      if(p != null) {
-//        p.destroy();
-//        exitCode = p.exitValue();
-//      }
-//    }
-//    return exitCode;
-//  }
 }
 

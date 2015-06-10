@@ -40,12 +40,14 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
+import uk.ac.sanger.cgp.wwdocker.factories.WorkflowFactory;
+import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
 
 /**
  *
  * @author kr2
  */
-public class DockerSanger implements Callable<Integer> {
+public class Docker implements Callable<Integer> {
   private static final Logger logger = LogManager.getLogger();
   private Thread t;
   private String threadName;
@@ -53,12 +55,14 @@ public class DockerSanger implements Callable<Integer> {
   private File remoteIni;
   private BaseConfiguration config;
   File logArchive = null;
+  private Workflow workManager = null;
    
-  public DockerSanger(WorkflowIni iniFile, BaseConfiguration config) {
+  public Docker(WorkflowIni iniFile, BaseConfiguration config) {
     this.config = config;
     this.threadName = iniFile.getIniFile().getName();
     this.iniFile = iniFile;
     remoteIni = Paths.get(config.getString("datastoreDir"), threadName).toFile();
+    workManager = new WorkflowFactory().getWorkflow(config);
   }
 
   public Integer call() {
@@ -68,7 +72,7 @@ public class DockerSanger implements Callable<Integer> {
     try {
       FileUtils.writeStringToFile(remoteIni, iniFile.getIniContent(), null);
       
-      result = Local.runDocker(config, remoteIni);
+      result = workManager.runDocker(config, remoteIni);
       if(result != 0) {
         // we should package the results as defined by the config of this workflow type
         logArchive = packageLogs();
@@ -87,18 +91,22 @@ public class DockerSanger implements Callable<Integer> {
   }
   
   public File packageLogs() {
-    String oozieBase = config.getString("datastoreDir").concat("/oozie-*");
-    String includeFile = config.getString("datastoreDir").concat("/toInclude.lst");
-    File logTar = Paths.get(config.getString("datastoreDir"),"logs.tar.gz").toFile();
+    String datastore = config.getString("datastoreDir");
+    String includeFile = datastore.concat("/toInclude.lst");
+    File logTar = Paths.get(datastore,"logs.tar.gz").toFile();
     if(logTar.exists()) {
       logTar.delete();
     }
-    String command = "cd ".concat(oozieBase)
-      .concat("; find generated-scripts/ -type f > ")
-      .concat(includeFile).concat(";")
-      .concat(iniFile.getLogSearchCmd())
-      .concat(">>").concat(includeFile)
-      .concat(";tar -C ").concat(oozieBase)
+    String command = "cd ".concat(datastore)
+      .concat("; find oozie-*/generated-scripts/ -type f > ")
+      .concat(includeFile)
+      .concat("; find /tmp/WwDocker-logs/ -type f >> ") // will break if log4j output moved
+      .concat(includeFile);
+    
+    for(String c : iniFile.getLogSearchCmds()) {
+      command = command.concat(";").concat(c).concat(">>").concat(includeFile);
+    }
+    command = command.concat(";tar -C ").concat(datastore)
       .concat(" -czf ")
       .concat(logTar.getAbsolutePath())
       .concat(" -T ").concat(includeFile);

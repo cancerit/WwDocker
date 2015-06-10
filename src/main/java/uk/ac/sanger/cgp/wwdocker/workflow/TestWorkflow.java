@@ -52,14 +52,13 @@ import uk.ac.sanger.cgp.wwdocker.interfaces.Workflow;
  *
  * @author kr2
  */
-public class SangerWorkflow implements Workflow {
+public class TestWorkflow implements Workflow {
   private static final Logger logger = LogManager.getLogger();
   BaseConfiguration config;
   
-  private static final String[] logSearchCmd = {"find oozie-*/seqware-results/ -type f | grep -F '/logs/'",
-                                                "find oozie-*/ -type f | grep 'gtdownload.*log$'"};
+  private static final String[] logSearchCmd = {};
   
-  public SangerWorkflow(BaseConfiguration config) {
+  public TestWorkflow(BaseConfiguration config) {
     this.config = config;
   }
   
@@ -118,34 +117,18 @@ public class SangerWorkflow implements Workflow {
     
     String command = "docker run --rm -h master";
     command = command.concat(" -v ").concat(config.getString("datastoreDir")).concat(":/datastore");
-    command = command.concat(" -v ").concat(workflow.getAbsolutePath()).concat(":/workflow");
+//    command = command.concat(" -v ").concat(workflow.getAbsolutePath()).concat(":/workflow");
     command = command.concat(" ").concat(seqwareWhiteStarImage(config));
     return command;
   }
   
   @Override
   public int runDocker(BaseConfiguration config, File iniFile) {
-    /*
-     * docker run --rm -h master -t
-     * -v /cgp/datastore:/datastore
-     * -v /cgp/Workflow_Bundle_SangerPancancerCgpCnIndelSnvStr_1.0.5.1_SeqWare_1.1.0-alpha.5:/workflow
-     * -i seqware/seqware_whitestar_pancancer
-     * seqware bundle launch
-     * --no-metadata
-     * --engine whitestar-parallel
-     * --dir /workflow
-     * --ini /datastore/testRun.ini
-     */
-    
+   
     String command = baseDockerCommand(config, null);
-    command = command.concat(" bash -c \"");
-    command = command.concat("sed -i 's|OOZIE_RETRY_MAX=.*|OOZIE_RETRY_MAX=0|' /home/seqware/.seqware/settings ;");
-    command = command.concat(" seqware bundle launch --no-metadata --engine whitestar-parallel");
-    command = command.concat(" --dir /workflow");
-    command = command.concat(" --ini /datastore/").concat(iniFile.getName());
-    command = command.concat("\"");
-    // this may need to be more itelligent than just the exit code
-    return execCommand(command, Config.getEnvs(config), true);
+    command = command.concat(" perl /datastore/run.pl ")
+      .concat(iniFile.getName().replace(".ini", "")); // this changes the amount of output
+    return execCommand(command, Config.getEnvs(config), false);
   }
 
   @Override
@@ -153,10 +136,7 @@ public class SangerWorkflow implements Workflow {
     boolean provisioned = false;
     String remoteWorkflowDir = config.getString("workflowDir");
     String localSeqwareJar = config.getString("seqware");
-    String localWorkflowZip = config.getString("workflow");
     File jreDist = Utils.expandUserFile(config, "jreDist", true);
-    File remoteSeqwareJar = new File(remoteWorkflowDir.concat("/").concat(localSeqwareJar.replaceAll(".*/", "")));
-    File remoteWorkflowZip = new File(remoteWorkflowDir.concat("/").concat(localWorkflowZip.replaceAll(".*/", "")));
     String[] pullDockerImages = config.getStringArray("pullDockerImages");
     String optDir = "/opt";
     String workerLog = config.getString("log4-worker");
@@ -186,16 +166,12 @@ public class SangerWorkflow implements Workflow {
       return provisioned;
     }
     
-    if (Remote.curl(ssh, localWorkflowZip, remoteWorkflowDir) == null || Remote.expandWorkflow(ssh, remoteWorkflowZip, remoteSeqwareJar, remoteWorkflowDir) != 0) {
-      return provisioned;
-    }
-    String workflowBase = remoteWorkflowZip.getName().replaceAll("\\.zip$", "");
-    Path gnosDest = Paths.get(remoteWorkflowDir, workflowBase);
+    Local.pushToHost("testData/run.pl", host, config.getString("datastoreDir"), envs, ssh, localTmp);
+    
     if (Local.pushToHost(thisJar.getAbsolutePath(), host, optDir, envs, ssh, localTmp) != 0 // this jar file
      || Local.pushToHost(workerLog, host, optDir, envs, ssh, localTmp) != 0 // worker log config
      || Local.pushToHost(tmpConf.getAbsolutePath(), host, optDir, envs, ssh, localTmp) != 0 // config file
      || Remote.chmodPath(ssh, "go-wrx", optDir.concat("/*"), true) != 0 // file will have passwords
-     || Local.pushFileSetToHost(Utils.getGnosKeys(config), host, gnosDest.toString(), envs, ssh, localTmp) != 0 // GNOS keys
      || Remote.startWorkerDaemon(ssh, thisJar.getName(), tmpConf.getName(), mode) != 0) {
       return provisioned;
     }
