@@ -51,7 +51,7 @@ public class Control {
     + "\n\t\t- Issues KILL message to all hosts listed in the workers.cfg file"
     + "\n\n\tconfig.cfg ERRORS /some/path"
     + "\n\n\tconfig.cfg CLEARERR hostname"
-    + "\n\n\tconfig.cfg CLEANQ  queueName matchStringToRemove"
+    + "\n\n\tconfig.cfg CLEANQ queueName matchStringToRemove"
     + "\n\t\t- Gets and expands logs from the *.ERRORLOG queue";
   
   public static void main(String[] argv) throws Exception {
@@ -89,6 +89,7 @@ public class Control {
         String queueName = argv[2];
         String removeIfMatch = argv[3];
         rmq.cleanQueue(config.getString("qPrefix").concat(".").concat(queueName.toUpperCase()), removeIfMatch);
+        rmq.removeFromStateQueue(config.getString("qPrefix").concat(".").concat(queueName.toUpperCase()), removeIfMatch);
       }
       else if(executionPath.equalsIgnoreCase("ERRORS")) {
         ErrorLogs.getLog(config, rmq, modeOrPath);
