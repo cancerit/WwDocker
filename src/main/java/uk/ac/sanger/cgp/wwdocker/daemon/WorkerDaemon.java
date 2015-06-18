@@ -88,8 +88,14 @@ public class WorkerDaemon implements Daemon {
     thisState.setStatus(HostStatus.CLEAN);
     String hostName = thisState.getResource().getHostName();
     
-    // Remove from broken as I'm not anymore if I'm running
-    messaging.removeFromStateQueue(qPrefix.concat(".BROKEN"), hostName);
+    // Remove from all queues as I'll set my state again now
+    messaging.removeFromStateQueue(qPrefix.concat(".").concat("BROKEN"), hostName);
+    messaging.removeFromStateQueue(qPrefix.concat(".").concat("CLEAN"), hostName);
+    messaging.removeFromStateQueue(qPrefix.concat(".").concat("DONE"), hostName);
+    messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERROR"), hostName);
+    messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOGS"), hostName);
+    messaging.removeFromStateQueue(qPrefix.concat(".").concat("RECEIVE"), hostName);
+    messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName);
     
     // I'm running so send a message to the CLEAN queue
     messaging.sendMessage(qPrefix.concat(".CLEAN"), thisState);
@@ -180,8 +186,7 @@ public class WorkerDaemon implements Daemon {
         if(futureTask.isDone()) {
           try {
             int dockerExitCode = futureTask.get();
-            //Send to queue for persistance, only on change though
-            messaging.removeFromStateQueue(qPrefix.concat(".").concat(thisState.getStatus().name()), hostName);
+            logger.info("Exit code: "+ dockerExitCode);
             if(dockerExitCode == 0) {
               thisState.setStatus(HostStatus.DONE);
               messaging.sendMessage(qPrefix.concat(".").concat("UPLOADED"), thisState.getWorkflowIni());
@@ -197,10 +202,8 @@ public class WorkerDaemon implements Daemon {
             messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName);
             messaging.sendMessage(qPrefix.concat(".").concat(thisState.getStatus().name()), thisState);
             shutdownThread = null;
-            logger.info("Exit code: "+ futureTask.get());
 
             executor.shutdown();
-            
 
             dockerThread = null;
             executor = null;
