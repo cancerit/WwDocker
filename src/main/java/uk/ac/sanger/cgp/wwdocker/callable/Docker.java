@@ -98,7 +98,9 @@ public class Docker implements Callable<Integer> {
       logTar.delete();
     }
     String command = "cd ".concat(datastore)
-      .concat("; find oozie-*/generated-scripts/ -type f > ")
+      .concat("; find *.ini -type f > ") // grab the ini file
+      .concat(includeFile)
+      .concat("; find oozie-*/generated-scripts/ -type f >> ")
       .concat(includeFile)
       .concat("; find /tmp/WwDocker-logs/ -type f >> ") // will break if log4j output moved
       .concat(includeFile);
