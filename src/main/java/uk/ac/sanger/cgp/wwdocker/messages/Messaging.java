@@ -31,9 +31,11 @@
 package uk.ac.sanger.cgp.wwdocker.messages;
 
 import com.rabbitmq.client.AMQP.BasicProperties;
+import com.rabbitmq.client.AMQP.BasicProperties.Builder;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
+import com.rabbitmq.client.MessageProperties;
 import com.rabbitmq.client.QueueingConsumer;
 import java.io.File;
 import java.io.IOException;
@@ -88,14 +90,14 @@ public class Messaging {
   /**
    * Sends a message to the specified queue
    * @param queue
-   * @param message
+   * @param in
    * @param host
    * @throws IOException
    * @throws InterruptedException 
    */
   public void sendMessage(String queue, Object in, String host) throws IOException, InterruptedException {
     String message;
-    BasicProperties mProp = null;
+    Builder propBuilder = MessageProperties.MINIMAL_PERSISTENT_BASIC.builder();
     if(in.getClass().equals(String.class)) {
       message = (String) in;
     } else {
@@ -107,8 +109,9 @@ public class Messaging {
     if(host != null) {
       Map<String, Object> headers =  new HashMap();
       headers.put("host", host);
-      mProp = new BasicProperties.Builder().headers(headers).build();
+      propBuilder.headers(headers);
     }
+    BasicProperties mProp = propBuilder.build();
     
     Channel channel = connectionSend.createChannel();
     channel.queueDeclare(queue, true, false, false, null);
@@ -120,7 +123,7 @@ public class Messaging {
   public void sendFile(String queue, String host, File f) throws IOException, InterruptedException {
     Map<String, Object> headers =  new HashMap();
     headers.put("host", host);
-    BasicProperties mProp = new BasicProperties.Builder().headers(headers).build();
+    BasicProperties mProp = MessageProperties.MINIMAL_PERSISTENT_BASIC.builder().headers(headers).build();
     Channel channel = connectionSend.createChannel();
     channel.queueDeclare(queue, true, false, false, null);
     channel.basicPublish("", queue, mProp, Files.readAllBytes(f.toPath()));
