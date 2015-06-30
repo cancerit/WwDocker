@@ -70,7 +70,7 @@ public class Messaging {
 
   public Messaging(BaseConfiguration config) {
     this.config = config;
-    getRmqConnection(config);
+    getRmqConnection();
   }
   
   public Connection getSendConn() {
@@ -326,12 +326,14 @@ public class Messaging {
     return responses;
   }
 
-  protected void getRmqConnection(BaseConfiguration config) {
+  protected void getRmqConnection() {
     ConnectionFactory factory = new ConnectionFactory();
     factory.setHost(config.getString("rabbit_host"));
     factory.setPort(config.getInt("rabbit_port", 5672));
     factory.setUsername(config.getString("rabbit_user"));
     factory.setPassword(config.getString("rabbit_pw"));
+    factory.setNetworkRecoveryInterval(60000); // retry every 60 seconds
+    factory.setAutomaticRecoveryEnabled(true);
     logger.debug(factory.toString());
     try {
       connectionSend = factory.newConnection();
