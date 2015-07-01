@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
@@ -174,6 +175,54 @@ public class Local {
       }
     }
     return exitCode;
+  }
+  
+  public static Map<String,String> execCapture(String command, Map envs, boolean shellCmd) {
+    Map<String,String> result = new HashMap();
+    ProcessBuilder pb;
+    if(shellCmd) {
+      pb = new ProcessBuilder("/bin/sh", "-c", command);
+    }
+    else {
+      pb = new ProcessBuilder(command.split(" "));
+    }
+    Map<String, String> pEnv = pb.environment();
+    pEnv.putAll(envs);
+    logger.info("Executing: " + command);
+    int exitCode = -1;
+    Process p = null;
+    File tempOut = null;
+    File tempErr = null;
+    try {
+      tempOut = File.createTempFile("wwdExec", ".out");
+      tempErr = File.createTempFile("wwdExec", ".err");
+      pb.redirectOutput(tempOut);
+      pb.redirectError(tempErr);
+      p = pb.start();
+      exitCode = p.waitFor();
+    } catch(InterruptedException | IOException e) {
+      logger.error(e.getMessage(), e);
+    }
+    finally {
+      if(tempOut != null && tempErr != null) {
+        try {
+          result.put("stdout", StringUtils.chomp(IOUtils.toString(new FileInputStream(tempOut))));
+          result.put("stderr", StringUtils.chomp(IOUtils.toString(new FileInputStream(tempErr))));
+          tempOut.delete();
+          tempErr.delete();
+          logger.info(result.get("stdout"));
+          logger.error(result.get("stderr"));
+        } catch (IOException e) {
+          logger.error("Failed to get output from log files");
+        }
+      }
+      if(p != null) {
+        p.destroy();
+        exitCode = p.exitValue();
+      }
+    }
+    result.put("exitCode", Integer.toString(exitCode));
+    return result;
   }
 }
 
