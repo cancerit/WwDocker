@@ -48,7 +48,7 @@ public class Control {
     + "\n\n\tconfig.cfg PRIMARY"
     + "\n\t\t- Starts the 'head' node daemon which provisions and monitors workers"
     + "\n\n\tconfig.cfg PRIMARY KILLALL"
-    + "\n\t\t- Issues KILL message to all hosts listed in the workers.cfg file"
+    + "\n\t\t- Issues KILL message to all hosts listed in the workers.cfg file, work is re-queued"
     + "\n\n\tconfig.cfg ERRORS /some/path"
     + "\n\n\tconfig.cfg CLEARERR hostname"
     + "\n\n\tconfig.cfg CLEANQ queueName matchStringToRemove"
@@ -81,15 +81,17 @@ public class Control {
         System.exit(1);
       }
       
+      String qPrefix = config.getString("qPrefix");
+      
       if(executionPath.equalsIgnoreCase("CLEARERR")) {
-        rmq.removeFromStateQueue(config.getString("qPrefix").concat(".ERROR"), modeOrPath);
-        rmq.removeFromStateQueue(config.getString("qPrefix").concat(".ERRORLOGS"), modeOrPath);
+        rmq.removeFromStateQueue(qPrefix.concat(".ERROR"), modeOrPath);
+        rmq.removeFromStateQueue(qPrefix.concat(".ERRORLOGS"), modeOrPath);
       }
       else if(executionPath.equalsIgnoreCase("CLEANQ")) {
         String queueName = argv[2];
         String removeIfMatch = argv[3];
-        rmq.cleanQueue(config.getString("qPrefix").concat(".").concat(queueName.toUpperCase()), removeIfMatch);
-        rmq.removeFromStateQueue(config.getString("qPrefix").concat(".").concat(queueName.toUpperCase()), removeIfMatch);
+        rmq.cleanQueue(qPrefix.concat(".").concat(queueName.toUpperCase()), removeIfMatch);
+        rmq.removeFromStateQueue(qPrefix.concat(".").concat(queueName.toUpperCase()), removeIfMatch);
       }
       else if(executionPath.equalsIgnoreCase("ERRORS")) {
         ErrorLogs.getLog(config, rmq, modeOrPath);
