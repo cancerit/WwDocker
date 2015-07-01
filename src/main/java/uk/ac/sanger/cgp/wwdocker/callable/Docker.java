@@ -33,6 +33,7 @@ package uk.ac.sanger.cgp.wwdocker.callable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.FileUtils;
@@ -68,12 +69,27 @@ public class Docker implements Callable<Integer> {
   public Integer call() {
     Integer result = new Integer(-1);
     logger.info("Running " + threadName);
-    
+
     try {
       FileUtils.writeStringToFile(remoteIni, iniFile.getIniContent(), null);
       
       result = workManager.runDocker(config, remoteIni);
       if(result != 0) {
+        // first check the log output for 'Setting workflow-run status to completed for'
+        String grepStarted = "'grep -nF \"Created workflow run with SWID: \" /tmp/WwDocker-logs/WwDocker-info.log | tail -n 1 | cut -f 1 -d \";\"'";
+        Map<String,String> startedRes = Local.execCapture(grepStarted, null, true);
+        
+        String grepCompleted = "'grep -nF \"Setting workflow-run status to completed for\" /tmp/WwDocker-logs/WwDocker-info.log | tail -n 1 | cut -f 1 -d \":\"";
+        Map<String,String> completeRes = Local.execCapture(grepStarted, null, true);
+        
+        if(completeRes.get("stdout").length() > 0 && startedRes.get("stdout").length() > 0) {
+          int startedLine = Integer.parseInt(startedRes.get("stdout"));
+          int completeLine = Integer.parseInt(completeRes.get("stdout"));
+          if(completeLine > startedLine) {
+            result = 0;
+          }
+        }
+        
         // we should package the results as defined by the config of this workflow type
         logArchive = packageLogs();
       }
@@ -98,7 +114,9 @@ public class Docker implements Callable<Integer> {
       logTar.delete();
     }
     String command = "cd ".concat(datastore)
-      .concat("; find oozie-*/generated-scripts/ -type f > ")
+      .concat("; find *.ini -type f > ") // grab the ini file
+      .concat(includeFile)
+      .concat("; find oozie-*/generated-scripts/ -type f >> ")
       .concat(includeFile)
       .concat("; find /tmp/WwDocker-logs/ -type f >> ") // will break if log4j output moved
       .concat(includeFile);
