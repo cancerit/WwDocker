@@ -37,6 +37,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeoutException;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.logging.log4j.LogManager;
@@ -72,7 +73,7 @@ public class WorkerDaemon implements Daemon {
   }
   
   @Override
-  public void run(String mode) throws IOException, InterruptedException, ConfigurationException {
+  public void run(String mode) throws IOException, InterruptedException, TimeoutException, ConfigurationException {
     WorkerResources hr = new WorkerResources();
     logger.debug(Utils.objectToJson(hr));
     
@@ -104,11 +105,24 @@ public class WorkerDaemon implements Daemon {
     
     int counter = 30;
     Workflow workflowImp = new WorkflowFactory().getWorkflow(config);
+    int failedRmqGet = 0;
     while (true) {
       Thread.sleep(500); // don't eat cpu
       //Only control messages will be sent directly to the host now
       
-      WorkerState recievedState = (WorkerState) messaging.getWorkerState(myQueue, 10);
+      WorkerState recievedState = null;
+      try {
+        recievedState = (WorkerState) messaging.getWorkerState(myQueue, 10);
+        failedRmqGet = 0;
+      } catch( IOException e ) {
+        failedRmqGet++;
+        if(failedRmqGet == 10) {
+          logger.fatal("Failed to communicate with RMQ server 10 times, aborting.", e);
+          System.exit(1);
+        }
+        logger.warn("Failed to communicate with RMQ server, allowable for 10 iterations only.", e);
+      }
+        
       thisState.getResource().init();
       
       if(recievedState != null) {
@@ -169,7 +183,7 @@ public class WorkerDaemon implements Daemon {
         }
         logger.debug(thisState.toString());
         thisState.setWorkflowIni(workIni);
-        shutdownThread = attachWorkIniShutdownHook(thisState.getWorkflowIni(), messaging, qPrefix);
+        shutdownThread = attachWorkIniShutdownHook(thisState.getWorkflowIni(), messaging, qPrefix, hostName);
         workflowImp.cleanDockerPath(config); // clean up the workarea
         
         dockerThread = new Docker(workIni, config);
@@ -238,14 +252,23 @@ public class WorkerDaemon implements Daemon {
     }
   }
   
-  private Thread attachWorkIniShutdownHook(WorkflowIni ini, Messaging messaging, String qPrefix) {
+  private Thread attachWorkIniShutdownHook(WorkflowIni ini, Messaging messaging, String qPrefix, String hostName) {
     Thread sdt = new Thread() {
       @Override
       public void run(){
         try {
-          messaging.sendMessage(qPrefix.concat(".").concat("PEND"), Utils.objectToJson(ini));
+          // We need to know which INI's may have been lost and which hosts they were on when things go odd.
+          // This way we can track which hosts may have issues unrelated to workflow state.
+          messaging.sendMessage(qPrefix.concat(".").concat("UNCLEAN"), Utils.objectToJson(ini));
+          // really not running if this has been executed.
+          messaging.removeFromStateQueue("BROKEN", hostName); // broken means failed to provision
+          messaging.removeFromStateQueue("CLEAN", hostName);
+          messaging.removeFromStateQueue("ERROR", hostName);
+          messaging.removeFromStateQueue("ERRORLOG", hostName);
+          messaging.removeFromStateQueue("RECEIVE", hostName);
+          messaging.removeFromStateQueue("RUNNING", hostName);
         }
-        catch(IOException | InterruptedException e) {
+        catch(IOException | InterruptedException | TimeoutException e) {
           throw new RuntimeException("Error while executing shutdownHook", e);
         }
       }

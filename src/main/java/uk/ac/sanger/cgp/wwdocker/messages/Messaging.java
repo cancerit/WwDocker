@@ -48,6 +48,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.FileUtils;
 import org.apache.logging.log4j.LogManager;
@@ -64,26 +65,31 @@ public class Messaging {
   private static final Logger logger = LogManager.getLogger();
 
   BaseConfiguration config;
-  private Connection connectionSend;
-  private Connection connectionRcv;
-
-  Map<String, Channel> channels = new HashMap();
-  Map<String, QueueingConsumer> consumers = new HashMap();
 
   public Messaging(BaseConfiguration config) {
     this.config = config;
-    getRmqConnection();
   }
   
-  public Connection getSendConn() {
-    return connectionSend;
+  public Connection getRmqConn() throws IOException {
+    ConnectionFactory factory = new ConnectionFactory();
+    factory.setHost(config.getString("rabbit_host"));
+    factory.setPort(config.getInt("rabbit_port", 5672));
+    factory.setUsername(config.getString("rabbit_user"));
+    factory.setPassword(config.getString("rabbit_pw"));
+    factory.setNetworkRecoveryInterval(60000); // retry every 60 seconds
+    factory.setAutomaticRecoveryEnabled(true);
+    return factory.newConnection();
   }
   
-  public Connection getRcvConn() {
-    return connectionRcv;
+  public void closeRmqConn(Connection conn) {
+    try {
+      conn.close(-1); // 0.5 sec
+    } catch (IOException e) {
+      throw new RuntimeException(e.toString(), e);
+    }
   }
   
-  public void sendMessage(String queue, Object in) throws IOException, InterruptedException {
+  public void sendMessage(String queue, Object in) throws IOException, InterruptedException, TimeoutException {
     sendMessage(queue, in, null);
   }
 
@@ -94,8 +100,9 @@ public class Messaging {
    * @param host
    * @throws IOException
    * @throws InterruptedException 
+   * @throws TimeoutException
    */
-  public void sendMessage(String queue, Object in, String host) throws IOException, InterruptedException {
+  public void sendMessage(String queue, Object in, String host) throws IOException, InterruptedException, TimeoutException {
     String message;
     Builder propBuilder = MessageProperties.MINIMAL_PERSISTENT_BASIC.builder();
     if(in.getClass().equals(String.class)) {
@@ -113,26 +120,35 @@ public class Messaging {
     }
     BasicProperties mProp = propBuilder.build();
     
+    Connection connectionSend = getRmqConn();
     Channel channel = connectionSend.createChannel();
+    channel.confirmSelect();
     channel.queueDeclare(queue, true, false, false, null);
     channel.basicPublish("", queue, mProp, message.getBytes());
+    channel.waitForConfirmsOrDie(5000);
     logger.info(queue + " sent: " + message);
     channel.close();
+    closeRmqConn(connectionSend);
   }
   
-  public void sendFile(String queue, String host, File f) throws IOException, InterruptedException {
+  public void sendFile(String queue, String host, File f) throws IOException, InterruptedException, TimeoutException {
     Map<String, Object> headers =  new HashMap();
     headers.put("host", host);
     BasicProperties mProp = MessageProperties.MINIMAL_PERSISTENT_BASIC.builder().headers(headers).build();
+    Connection connectionSend = getRmqConn();
     Channel channel = connectionSend.createChannel();
+    channel.confirmSelect();
     channel.queueDeclare(queue, true, false, false, null);
     channel.basicPublish("", queue, mProp, Files.readAllBytes(f.toPath()));
+    channel.waitForConfirmsOrDie(5000);
     logger.info(queue + " file: " + f.getAbsolutePath());
     channel.close();
+    closeRmqConn(connectionSend);
   }
   
   public void cleanQueue(String queue, String match)  throws IOException, InterruptedException {
     logger.trace(queue.concat(": ").concat(match));
+    Connection connectionRcv = getRmqConn();
     Channel channel = connectionRcv.createChannel();
     channel.queueDeclare(queue, true, false, false, null);
     
@@ -155,10 +171,12 @@ public class Messaging {
       delivery = consumer.nextDelivery(1000);
     }
     channel.close();
+    closeRmqConn(connectionRcv);
   }
   
   public List<File> getFiles(String queue, Path outFolder, boolean ack) throws IOException, InterruptedException {
     List files = new ArrayList();
+    Connection connectionRcv = getRmqConn();
     Channel channel = connectionRcv.createChannel();
     channel.queueDeclare(queue, true, false, false, null);
 
@@ -188,11 +206,13 @@ public class Messaging {
     }
     logger.warn("getFiles done");
     channel.close();
+    closeRmqConn(connectionRcv);
     return files;
   }
   
   public WorkerState getWorkerState(String queue, long wait) throws IOException, InterruptedException {
     WorkerState ws = null;
+    Connection connectionRcv = getRmqConn();
     Channel channel = connectionRcv.createChannel();
     channel.queueDeclare(queue, true, false, false, null);
 
@@ -211,6 +231,7 @@ public class Messaging {
       channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
     }
     channel.close();
+    closeRmqConn(connectionRcv);
     return ws;
   }
   
@@ -233,6 +254,7 @@ public class Messaging {
    */
   public String getMessageString(String queue, long wait) throws IOException, InterruptedException {
     String message = null;
+    Connection connectionRcv = getRmqConn();
     Channel channel = connectionRcv.createChannel();
     channel.queueDeclare(queue, true, false, false, null);
 
@@ -251,10 +273,11 @@ public class Messaging {
       logger.info(queue + " recieved: " + message);
     }
     channel.close();
+    closeRmqConn(connectionRcv);
     return message;
   }
   
-  public boolean queryGaveResponse(String queryQueue, String responseQueue, String query, long wait) throws IOException, InterruptedException {
+  public boolean queryGaveResponse(String queryQueue, String responseQueue, String query, long wait) throws IOException, InterruptedException, TimeoutException {
     boolean response = false;
     // clean up queue we send to first
     getMessageStrings(queryQueue, 100);
@@ -269,18 +292,12 @@ public class Messaging {
     return response;
   }
   
-  private int messageCount(String queue)  throws IOException, InterruptedException {
-    Channel channel = connectionRcv.createChannel();
-    int messages = channel.queueDeclare(queue, true, false, false, null).getMessageCount();
-    channel.close();
-    return messages;
-  }
-  
   public void removeFromStateQueue(String queue, String hostToRemove) throws IOException, InterruptedException {
     logger.trace(queue.concat(": ").concat(hostToRemove));
-    int maxTries = messageCount(queue) * 2; // x 2 just incase the queue grows in the interim
+    Connection connectionRcv = getRmqConn();
     Channel channel = connectionRcv.createChannel();
-    channel.queueDeclare(queue, true, false, false, null);
+    int maxTries = channel.queueDeclare(queue, true, false, false, null).getMessageCount();
+    logger.trace("Queue : messages\t" + queue + " : " + maxTries);
 
     QueueingConsumer consumer = new QueueingConsumer(channel);
     channel.basicConsume(queue, false, consumer);
@@ -300,6 +317,7 @@ public class Messaging {
       maxTries--;
     }
     channel.close();
+    closeRmqConn(connectionRcv);
   }
   
   /**
@@ -312,6 +330,7 @@ public class Messaging {
    */
   public List<String> getMessageStrings(String queue, long wait) throws IOException, InterruptedException {
     List<String> responses = new ArrayList();
+    Connection connectionRcv = getRmqConn();
     Channel channel = connectionRcv.createChannel();
     channel.queueDeclare(queue, true, false, false, null);
     QueueingConsumer consumer = new QueueingConsumer(channel);
@@ -326,24 +345,8 @@ public class Messaging {
       responses.add(message);
     }
     channel.close();
+    closeRmqConn(connectionRcv);
     return responses;
-  }
-
-  protected void getRmqConnection() {
-    ConnectionFactory factory = new ConnectionFactory();
-    factory.setHost(config.getString("rabbit_host"));
-    factory.setPort(config.getInt("rabbit_port", 5672));
-    factory.setUsername(config.getString("rabbit_user"));
-    factory.setPassword(config.getString("rabbit_pw"));
-    factory.setNetworkRecoveryInterval(60000); // retry every 60 seconds
-    factory.setAutomaticRecoveryEnabled(true);
-    logger.debug(factory.toString());
-    try {
-      connectionSend = factory.newConnection();
-      connectionRcv = factory.newConnection();
-    } catch (IOException e) {
-      throw new RuntimeException(e.toString(), e);
-    }
   }
   
   @Override
@@ -351,11 +354,7 @@ public class Messaging {
     StringBuilder result = new StringBuilder();
     String NEW_LINE = System.getProperty("line.separator");
     result.append(this.getClass().getName()).append(" Object {").append(NEW_LINE);
-    result.append(" channels: ").append(channels).append(NEW_LINE);
-    result.append(" consumers: ").append(consumers).append(NEW_LINE);
     result.append(" config: ").append(config).append(NEW_LINE);
-    result.append(" connectionSend: ").append(connectionSend).append(NEW_LINE);
-    result.append(" connectionRcv: ").append(connectionRcv).append(NEW_LINE);
     result.append("}");
     return result.toString();
   }

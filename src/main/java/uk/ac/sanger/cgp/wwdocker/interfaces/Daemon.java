@@ -32,6 +32,7 @@
 package uk.ac.sanger.cgp.wwdocker.interfaces;
 
 import java.io.IOException;
+import java.util.concurrent.TimeoutException;
 import org.apache.commons.configuration.ConfigurationException;
 
 /**
@@ -39,5 +40,5 @@ import org.apache.commons.configuration.ConfigurationException;
  * @author kr2
  */
 public interface Daemon {
-  void run(String mode) throws IOException, InterruptedException, ConfigurationException;
+  void run(String mode) throws IOException, InterruptedException, TimeoutException, ConfigurationException;
 }

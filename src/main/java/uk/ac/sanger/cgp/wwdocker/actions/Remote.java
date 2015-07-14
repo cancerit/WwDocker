@@ -53,7 +53,7 @@ import org.apache.logging.log4j.Logger;
  */
 public class Remote {
   private static final Logger logger = LogManager.getLogger();
-  private static final int SSH_TIMEOUT = 10000; // 10 seconds
+  private static final int SSH_TIMEOUT = 20000; // 20 seconds
   
   
   private static Session addNewHost(BaseConfiguration config, String host) {
@@ -126,6 +126,36 @@ public class Remote {
       }
     }
     return session;
+  }
+  
+  public static boolean dockerRunning(Session session, String user) {
+    boolean isRunning = true; // assume least destructive state
+    String command = "ps -fu " + user + " | grep docker | grep -cv grep";
+    int exitCode = 0;
+    try {
+      exitCode = execCommand(session, command);
+    } catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection", e);
+    }
+    if(exitCode == 1) {
+      isRunning = false;
+    }
+    return isRunning;
+  }
+  
+  public static boolean workerRunning(Session session, String user) {
+    boolean isRunning = true; // assume least destructive state
+    String command = "ps -fu " + user + " | grep -E \"WwDocker-.*.jar\" | grep -cv grep";
+    int exitCode = 0;
+    try {
+      exitCode = execCommand(session, command);
+    } catch(JSchException e) {
+      throw new RuntimeException("Failure in SSH connection", e);
+    }
+    if(exitCode == 1) {
+      isRunning = false;
+    }
+    return isRunning;
   }
   
   public static int dockerLoad(Session session, String[] images, String workspace) {

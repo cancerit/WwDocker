@@ -140,6 +140,7 @@ public class SangerWorkflow implements Workflow {
     String command = baseDockerCommand(config, null);
     command = command.concat(" bash -c \"");
     command = command.concat("sed -i 's|OOZIE_RETRY_MAX=.*|OOZIE_RETRY_MAX=0|' /home/seqware/.seqware/settings ;");
+    command = command.concat("echo 'WHITESTAR_MEMORY_LIMIT=250000' >> /home/seqware/.seqware/settings ;");
     command = command.concat(" seqware bundle launch --no-metadata --engine whitestar-parallel");
     command = command.concat(" --dir /workflow");
     command = command.concat(" --ini /datastore/").concat(iniFile.getName());
