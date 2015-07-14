@@ -69,7 +69,6 @@ public class Docker implements Callable<Integer> {
   public Integer call() {
     Integer result = new Integer(-1);
     logger.info("Running " + threadName);
-
     try {
       FileUtils.writeStringToFile(remoteIni, iniFile.getIniContent(), null);
       
@@ -89,7 +88,6 @@ public class Docker implements Callable<Integer> {
             result = 0;
           }
         }
-        
         // we should package the results as defined by the config of this workflow type
         logArchive = packageLogs();
       }
@@ -98,7 +96,8 @@ public class Docker implements Callable<Integer> {
       throw new RuntimeException(e.getMessage(), e);
     }
     
-    logger.info("Thread " + threadName + " exiting.");
+    logger.trace("Thread " + threadName + " exiting.");
+    logger.trace("Result: " + result);
     return result;
   }
   

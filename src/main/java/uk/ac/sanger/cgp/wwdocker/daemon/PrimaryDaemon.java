@@ -41,6 +41,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -73,7 +74,7 @@ public class PrimaryDaemon implements Daemon {
   }
   
   @Override
-  public void run(String mode) throws IOException, InterruptedException, ConfigurationException {
+  public void run(String mode) throws IOException, InterruptedException, TimeoutException, ConfigurationException {
     // lots of values that will be used over and over again
     String qPrefix = config.getString("qPrefix");
     File thisJar = Utils.thisJarFile();
@@ -176,7 +177,7 @@ public class PrimaryDaemon implements Daemon {
     }
   }
   
-  private void addWorkToPend(Workflow workManager, BaseConfiguration config) throws IOException, InterruptedException {
+  private void addWorkToPend(Workflow workManager, BaseConfiguration config) throws IOException, InterruptedException, TimeoutException {
     // send all work into the wwd_PEND queue, data can be added during execution, this ensures duplicates don't occur
     List<File> iniFiles = Utils.getWorkInis(config);
     if(iniFiles.isEmpty()) {
@@ -207,7 +208,7 @@ public class PrimaryDaemon implements Daemon {
     workManager.iniUpdate(iniFiles, config, HostStatus.PEND);
   }
     
-  private void killAll(BaseConfiguration config, Map<String,String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException {
+  private void killAll(BaseConfiguration config, Map<String,String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException, TimeoutException {
     WorkerState killState = new WorkerState(thisJar, thisConf);
     killState.setChangeStatusTo(HostStatus.KILL);
     String killJson = Utils.objectToJson(killState);
