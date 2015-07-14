@@ -174,6 +174,7 @@ public class Local {
         exitCode = p.exitValue();
       }
     }
+    logger.trace("Exit code: " + exitCode);
     return exitCode;
   }
   
@@ -187,7 +188,9 @@ public class Local {
       pb = new ProcessBuilder(command.split(" "));
     }
     Map<String, String> pEnv = pb.environment();
-    pEnv.putAll(envs);
+    if(envs != null) {
+      pEnv.putAll(envs);
+    }
     logger.info("Executing: " + command);
     int exitCode = -1;
     Process p = null;

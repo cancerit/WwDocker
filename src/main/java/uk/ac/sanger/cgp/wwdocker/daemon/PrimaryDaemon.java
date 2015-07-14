@@ -31,6 +31,7 @@
 
 package uk.ac.sanger.cgp.wwdocker.daemon;
 
+import com.jcraft.jsch.Session;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -41,6 +42,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -48,6 +50,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import uk.ac.sanger.cgp.wwdocker.Config;
 import uk.ac.sanger.cgp.wwdocker.actions.Local;
+import uk.ac.sanger.cgp.wwdocker.actions.Remote;
 import uk.ac.sanger.cgp.wwdocker.actions.Utils;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkerState;
 import uk.ac.sanger.cgp.wwdocker.beans.WorkflowIni;
@@ -66,6 +69,7 @@ public class PrimaryDaemon implements Daemon {
   
   private static PropertiesConfiguration config;
   private static Messaging messaging;
+  private static final int RETRY_INIT = 60;
   
   public PrimaryDaemon(PropertiesConfiguration config, Messaging rmq) {
     PrimaryDaemon.config = config;
@@ -73,7 +77,7 @@ public class PrimaryDaemon implements Daemon {
   }
   
   @Override
-  public void run(String mode) throws IOException, InterruptedException, ConfigurationException {
+  public void run(String mode) throws IOException, InterruptedException, TimeoutException, ConfigurationException {
     // lots of values that will be used over and over again
     String qPrefix = config.getString("qPrefix");
     File thisJar = Utils.thisJarFile();
@@ -104,6 +108,8 @@ public class PrimaryDaemon implements Daemon {
     // this holds md5 of this JAR and the config (which lists the workflow code to use)
     WorkerState provState = new WorkerState(thisJar, tmpConf);
     
+    int nextRetry = RETRY_INIT;
+    
     while(true) {
       addWorkToPend(workManager, config);
       
@@ -111,7 +117,9 @@ public class PrimaryDaemon implements Daemon {
       hostSet(config, hosts);
       
       for(Map.Entry<String,String> e : hosts.entrySet()) {
-        if(e.getValue().equals("CURRENT")) {
+        
+        // we want to perioidically check on our hosts
+        if(nextRetry != 0 && e.getValue().equals("CURRENT")) {
           continue;
         }
         
@@ -125,8 +133,26 @@ public class PrimaryDaemon implements Daemon {
         
         provState.setChangeStatusTo(HostStatus.CHECKIN);
         provState.setReplyToQueue(qPrefix.concat(".ACTIVE"));
+        
+        
+        if(nextRetry == 0) {
+          hosts.replace(host, "TO_PROVISION");
+        }
+        
         if(e.getValue().equals("TO_PROVISION")) {
           if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 15000)) {
+            // no response from host... but is it still up
+            // see if docker is running before reprovision
+            Session hostSession = Remote.getSession(config, host);
+            boolean dockerRunning = Remote.dockerRunning(hostSession, hostSession.getUserName());
+            boolean workerRunning = Remote.workerRunning(hostSession, hostSession.getUserName());
+            Remote.closeSsh(hostSession);
+            if(dockerRunning || workerRunning) {
+              logger.trace("Retry host later: " + host);
+              hosts.replace(host, "RETRY");
+              break;
+            }
+
             logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
             if(!workManager.provisionHost(host, PrimaryDaemon.config, thisJar, tmpConf, mode, envs)) {
               hosts.replace(host, "BROKEN");
@@ -141,6 +167,12 @@ public class PrimaryDaemon implements Daemon {
       }
       // we need a little sleep here or we'll kill the queues
       Thread.sleep(1000);
+      if(nextRetry == 0) {
+        nextRetry = RETRY_INIT;
+      }
+      else {
+        nextRetry--;
+      }
     }
   }
   
@@ -176,7 +208,7 @@ public class PrimaryDaemon implements Daemon {
     }
   }
   
-  private void addWorkToPend(Workflow workManager, BaseConfiguration config) throws IOException, InterruptedException {
+  private void addWorkToPend(Workflow workManager, BaseConfiguration config) throws IOException, InterruptedException, TimeoutException {
     // send all work into the wwd_PEND queue, data can be added during execution, this ensures duplicates don't occur
     List<File> iniFiles = Utils.getWorkInis(config);
     if(iniFiles.isEmpty()) {
@@ -207,7 +239,7 @@ public class PrimaryDaemon implements Daemon {
     workManager.iniUpdate(iniFiles, config, HostStatus.PEND);
   }
     
-  private void killAll(BaseConfiguration config, Map<String,String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException {
+  private void killAll(BaseConfiguration config, Map<String,String> hosts, File thisJar, File thisConf) throws IOException, InterruptedException, TimeoutException {
     WorkerState killState = new WorkerState(thisJar, thisConf);
     killState.setChangeStatusTo(HostStatus.KILL);
     String killJson = Utils.objectToJson(killState);
