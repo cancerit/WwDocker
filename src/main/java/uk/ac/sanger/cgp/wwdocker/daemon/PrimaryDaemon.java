@@ -69,7 +69,7 @@ public class PrimaryDaemon implements Daemon {
   
   private static PropertiesConfiguration config;
   private static Messaging messaging;
-  private static final int RETRY_INIT = 60;
+  private static final int RETRY_INIT = 300;
   
   public PrimaryDaemon(PropertiesConfiguration config, Messaging rmq) {
     PrimaryDaemon.config = config;
@@ -118,11 +118,6 @@ public class PrimaryDaemon implements Daemon {
       
       for(Map.Entry<String,String> e : hosts.entrySet()) {
         
-        // we want to perioidically check on our hosts
-        if(nextRetry != 0 && e.getValue().equals("CURRENT")) {
-          continue;
-        }
-        
         String host = e.getKey();
         if(e.getValue().equals("KILL")) {
           provState.setChangeStatusTo(HostStatus.KILL);
@@ -135,11 +130,9 @@ public class PrimaryDaemon implements Daemon {
         provState.setReplyToQueue(qPrefix.concat(".ACTIVE"));
         
         
-        if(nextRetry == 0) {
-          hosts.replace(host, "TO_PROVISION");
-        }
-        
-        if(e.getValue().equals("TO_PROVISION")) {
+        if(e.getValue().equals("TO_PROVISION")
+            || ( (e.getValue().equals("CURRENT") || e.getValue().equals("RETRY") )  && nextRetry == 0)
+          ) {
           if(!messaging.queryGaveResponse(qPrefix.concat(".").concat(host), provState.getReplyToQueue(), Utils.objectToJson(provState), 15000)) {
             // no response from host... but is it still up
             // see if docker is running before reprovision
@@ -150,7 +143,7 @@ public class PrimaryDaemon implements Daemon {
             if(dockerRunning || workerRunning) {
               logger.trace("Retry host later: " + host);
               hosts.replace(host, "RETRY");
-              break;
+              continue;
             }
 
             logger.info("No response from host '".concat(host).concat("' (re)provisioning..."));
@@ -161,8 +154,10 @@ public class PrimaryDaemon implements Daemon {
               break;
             }
           }
-          hosts.replace(host, "CURRENT");
-          break; // so we start some work on this host before provisioning more
+          if(!e.getValue().equals("CURRENT")) {
+            hosts.replace(host, "CURRENT");
+            break; // so we start some work on this host before provisioning more
+          }
         }
       }
       // we need a little sleep here or we'll kill the queues
