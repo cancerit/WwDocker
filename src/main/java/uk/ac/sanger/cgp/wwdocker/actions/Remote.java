@@ -135,7 +135,12 @@ public class Remote {
     try {
       exitCode = execCommand(session, command);
     } catch(JSchException e) {
-      throw new RuntimeException("Failure in SSH connection", e);
+      if(e.getMessage().contains("session is down")) {
+        logger.warn("Session terminated mid query, abort check");
+      }
+      else {
+        throw new RuntimeException("Failure in SSH connection", e);
+      }
     }
     if(exitCode == 1) {
       isRunning = false;
@@ -150,7 +155,12 @@ public class Remote {
     try {
       exitCode = execCommand(session, command);
     } catch(JSchException e) {
-      throw new RuntimeException("Failure in SSH connection", e);
+      if(e.getMessage().contains("session is down")) {
+        logger.warn("Session terminated mid query, abort check");
+      }
+      else {
+        throw new RuntimeException("Failure in SSH connection", e);
+      }
     }
     if(exitCode == 1) {
       isRunning = false;
