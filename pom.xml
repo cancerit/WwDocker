@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>uk.ac.sanger.cgp</groupId>
     <artifactId>WwDocker</artifactId>
-    <version>1.3.2</version> <!-- VERSION OF PACKAGE HERE!-->
+    <version>1.4.0</version> <!-- VERSION OF PACKAGE HERE!-->
     <packaging>jar</packaging>
     <properties>
       <mainClass>project.Main.class</mainClass>
