@@ -261,12 +261,12 @@ public class WorkerDaemon implements Daemon {
           // This way we can track which hosts may have issues unrelated to workflow state.
           messaging.sendMessage(qPrefix.concat(".").concat("UNCLEAN"), Utils.objectToJson(ini));
           // really not running if this has been executed.
-          messaging.removeFromStateQueue("BROKEN", hostName); // broken means failed to provision
-          messaging.removeFromStateQueue("CLEAN", hostName);
-          messaging.removeFromStateQueue("ERROR", hostName);
-          messaging.removeFromStateQueue("ERRORLOG", hostName);
-          messaging.removeFromStateQueue("RECEIVE", hostName);
-          messaging.removeFromStateQueue("RUNNING", hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("BROKEN"), hostName); // broken means failed to provision
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("CLEAN"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERROR"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("ERRORLOG"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("RECEIVE"), hostName);
+          messaging.removeFromStateQueue(qPrefix.concat(".").concat("RUNNING"), hostName);
         }
         catch(IOException | InterruptedException | TimeoutException e) {
           throw new RuntimeException("Error while executing shutdownHook", e);
