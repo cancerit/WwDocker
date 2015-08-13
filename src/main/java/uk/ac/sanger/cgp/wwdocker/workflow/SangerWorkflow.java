@@ -159,13 +159,13 @@ public class SangerWorkflow implements Workflow {
     File remoteSeqwareJar = new File(remoteWorkflowDir.concat("/").concat(localSeqwareJar.replaceAll(".*/", "")));
     File remoteWorkflowZip = new File(remoteWorkflowDir.concat("/").concat(localWorkflowZip.replaceAll(".*/", "")));
     String[] pullDockerImages = config.getStringArray("pullDockerImages");
-    String optDir = "/opt";
+    String optDir = "/opt/wwdocker";
     String workerLog = config.getString("log4-worker");
     File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
     
     List<String> createPaths = new ArrayList();
-    createPaths.add("/opt");
-    createPaths.add("/opt/jre");
+    createPaths.add("/opt/wwdocker");
+    createPaths.add("/opt/wwdocker/jre");
     createPaths.add(remoteWorkflowDir);
     createPaths.add(config.getString("datastoreDir"));
     

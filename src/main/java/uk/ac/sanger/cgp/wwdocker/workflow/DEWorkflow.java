@@ -146,13 +146,13 @@ public class DEWorkflow implements Workflow {
     String[] pullDockerImages = config.getStringArray("pullDockerImages");
     String[] curlDockerImages = config.getStringArray("curlDockerImages");
     String[] pushDockerImages = config.getStringArray("pushDockerImages");
-    String optDir = "/opt";
+    String optDir = "/opt/wwdocker";
     String workerLog = config.getString("log4-worker");
     File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
     
     List<String> createPaths = new ArrayList();
-    createPaths.add("/opt");
-    createPaths.add("/opt/jre");
+    createPaths.add("/opt/wwdocker");
+    createPaths.add("/opt/wwdocker/jre");
     createPaths.add(remoteWorkflowDir);
     createPaths.add(config.getString("datastoreDir"));
     
@@ -164,12 +164,12 @@ public class DEWorkflow implements Workflow {
     
     Remote.cleanupOldImages(ssh); // incase lots of stale ones are already present
     
-    if(Local.pushFileSetToHost(pushDockerImages, host, "/opt", envs, ssh, null) != 0) {
+    if(Local.pushFileSetToHost(pushDockerImages, host, "/opt/wwdocker", envs, ssh, null) != 0) {
       return provisioned;
     }
     String[] pushedDockerImages = new String[pushDockerImages.length];
     for(int i=0; i<pushDockerImages.length; i++) {
-      pushedDockerImages[i] = Paths.get("/opt", new File(pushDockerImages[i]).getName()).toFile().getPath();
+      pushedDockerImages[i] = Paths.get("/opt/wwdocker", new File(pushDockerImages[i]).getName()).toFile().getPath();
     }
     
     if (Remote.dockerPull(ssh, pullDockerImages) != 0

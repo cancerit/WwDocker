@@ -138,13 +138,13 @@ public class TestWorkflow implements Workflow {
     String localSeqwareJar = config.getString("seqware");
     File jreDist = Utils.expandUserFile(config, "jreDist", true);
     String[] pullDockerImages = config.getStringArray("pullDockerImages");
-    String optDir = "/opt";
+    String optDir = "/opt/wwdocker";
     String workerLog = config.getString("log4-worker");
     File localTmp = Utils.expandUserDirPath(config, "primaryLargeTmp", true);
     
     List<String> createPaths = new ArrayList();
-    createPaths.add("/opt");
-    createPaths.add("/opt/jre");
+    createPaths.add("/opt/wwdocker");
+    createPaths.add("/opt/wwdocker/jre");
     createPaths.add(remoteWorkflowDir);
     createPaths.add(config.getString("datastoreDir"));
     
