@@ -81,7 +81,7 @@ public class WorkerDaemon implements Daemon {
     
     String qPrefix = config.getString("qPrefix");
     
-    File thisConfig = new File("/opt/"+ qPrefix + ".remote.cfg");
+    File thisConfig = new File("/opt/wwdocker/"+ qPrefix + ".remote.cfg");
     File thisJar = Utils.thisJarFile();
     
     // build a local WorkerState

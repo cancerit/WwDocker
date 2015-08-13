@@ -249,7 +249,7 @@ public class Remote {
   }
   
   public static int expandJre(Session session, File localJre) {
-    String command = "tar --strip-components=1 -C /opt/jre -zxf /opt/".concat(localJre.getName());
+    String command = "tar --strip-components=1 -C /opt/wwdocker/jre -zxf /opt/wwdocker/".concat(localJre.getName());
     return paramExec(session, command);
   }
   
@@ -257,7 +257,7 @@ public class Remote {
     //java -cp seqware-distribution-1.1.0-alpha.6-full.jar net.sourceforge.seqware.pipeline.tools.UnZip --input-zip
     String workflowDir = workflowBase.concat("/").concat(localWorkflow.getName());
     workflowDir = workflowDir.replaceFirst("[.]zip$", "");
-    String command = "/opt/jre/bin/java -Xmx128m -cp ";
+    String command = "/opt/wwdocker/jre/bin/java -Xmx128m -cp ";
     command = command.concat(seqwareJar.getAbsolutePath());
     command = command.concat(" net.sourceforge.seqware.pipeline.tools.UnZip --input-zip ");
     command = command.concat(localWorkflow.getAbsolutePath());
@@ -324,9 +324,9 @@ public class Remote {
   public static int startWorkerDaemon(Session session, String jarName, String confName, String mode) {
     int exitCode = -1;
     //java -Dlog4j.configurationFile="config/log4j.properties.xml" -jar target/WwDocker-0.1.jar Primary config/default.cfg
-    String command = "/opt/jre/bin/java -Xmx256m -Dlog4j.configurationFile=\"/opt/log4j.properties_worker.xml\" -jar /opt/"
+    String command = "/opt/wwdocker/jre/bin/java -Xmx256m -Dlog4j.configurationFile=\"/opt/wwdocker/log4j.properties_worker.xml\" -jar /opt/wwdocker/"
                       .concat(jarName)
-                      .concat(" /opt/").concat(confName).concat(" Worker");
+                      .concat(" /opt/wwdocker/").concat(confName).concat(" Worker");
     if(mode != null) {
       command = command.concat(" ").concat(mode);
     }
